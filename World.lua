@@ -54,21 +54,41 @@ local function Detect()
     local function Rule(name)
         return rules[name] ~= nil and Try(GR.IsGameRuleActive, rules[name]) == true
     end
-    local code = Try(GetCurrentRegionName)
-    if type(code) ~= "string" or not code:find("^%u%u%u?%u?$") then code = REGION_CODE[region] or ("R" .. region) end
     return {
-        region = region, code = code,
+        region = region, code = REGION_CODE[region] or ("R" .. region),
         pvp = Rule("PvPRuleset"), rp = Rule("RPRuleset"),
         hardcore = Rule("HardcoreRuleset") or Try(GR.IsHardcoreActive) == true,
         mode = tonumber(Try(GR.GetCurrentGameModeRecordID)) or 0, -- kept for diagnostics, not part of the key
     }
 end
 
--- "US-PvP", "EU-Normal", "US-RP-PvP", "US-HC". Goes in saved data and on every message.
+-- "US-PvP", "EU-Normal", "US-RP-PvP", "US-HC". The name saved data is filed under. Not sent.
 local function Key(w)
     local rule = (w.rp and w.pvp and "RP-PvP") or (w.rp and "RP") or (w.pvp and "PvP") or "Normal"
     if w.hardcore then rule = rule == "Normal" and "HC" or ("HC-" .. rule) end
     return w.code .. "-" .. rule
+end
+
+-- What goes on every message instead of the key: one number, (region - 1) * 8 + rule-set bits
+-- (1 PvP, 2 Roleplay, 4 Hardcore), written in base 36. One character for the four regions
+-- Forever has: "0" is US-Normal, "1" US-PvP, "g" EU-Normal. "?" when the world isn't known.
+local DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz"
+local REGION_NUMBER = {}
+for number, code in ipairs(REGION_CODE) do REGION_NUMBER[code] = number end
+function MF:WorldCode(key)
+    local code, rule = tostring(key):match("^([%u%d]+)%-(.+)$")
+    local region = code and (REGION_NUMBER[code] or tonumber(code:match("^R(%d+)$")))
+    if not region or region < 1 then return "?" end
+    local bits, rest = 0, "-" .. rule .. "-"
+    for name, bit in pairs({ PvP = 1, RP = 2, HC = 4 }) do
+        local found
+        rest, found = rest:gsub("%-" .. name .. "%-", "-", 1)
+        if found > 0 then bits = bits + bit end
+    end
+    if rest:gsub("%-Normal%-", "-", 1):find("[^%-]") then return "?" end -- a rule set this build doesn't know
+    local n, out = (region - 1) * 8 + bits, ""
+    repeat out = DIGITS:sub(n % 36 + 1, n % 36 + 1) .. out n = math.floor(n / 36) until n == 0
+    return out
 end
 
 local function ValidKey(key)
@@ -110,6 +130,7 @@ function MF:EnterWorld()
     -- A character never changes world, so what it was last time stands in if the client can't say yet.
     local key = found and Key(found) or (type(char) == "table" and ValidKey(char.world) and char.world) or nil
     self.world, self.worldKey = found, key or "?"
+    self.worldCode = key and self:WorldCode(key) or "?"
     if not key then return end
     if type(char) ~= "table" then char = {} TheFishingLogChar = char end
     char.world = key
@@ -124,7 +145,7 @@ MF:On("PLAYER_ENTERING_WORLD", function(self)
     local key = Key(found)
     self.cdb.world = key
     if self.db.world == nil or self.db.world == key then
-        self.db.world, self.world, self.worldKey = key, found, key
+        self.db.world, self.world, self.worldKey, self.worldCode = key, found, key, self:WorldCode(key)
     elseif not self.worldReloadAsked then
         -- The log on screen is another world's. It can only be changed while loading.
         self.worldReloadAsked = true

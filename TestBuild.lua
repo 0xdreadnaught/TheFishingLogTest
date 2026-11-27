@@ -51,7 +51,7 @@ function MF:WorldProbeLines()
     end
     local function Line(label, text) out[#out + 1] = "World " .. label .. ": " .. text end
 
-    Line("key", Show(self.worldKey) .. " | " .. (self.WorldLabel and self:WorldLabel() or "?") .. " | saved data holds " .. Show(self.db and self.db.world)
+    Line("key", Show(self.worldKey) .. " | sent as " .. Show(self.worldCode) .. " | " .. (self.WorldLabel and self:WorldLabel() or "?") .. " | saved data holds " .. Show(self.db and self.db.world)
         .. " | parked " .. Show(self.db and self.db.worlds and (function() local n = {} for k in pairs(self.db.worlds) do n[#n + 1] = k end table.sort(n) return table.concat(n, " ") end)() or "")
         .. " | other-world messages dropped " .. tostring(self.otherWorldsHeard or 0))
     Line("region", Call("GetCurrentRegion") .. " | name " .. Call("GetCurrentRegionName"))

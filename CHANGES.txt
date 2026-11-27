@@ -6,6 +6,13 @@ CurseForge. This build only sees anglers who run the test build.
 Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
 X-Build line in the toc and shows in the journal title and diagnostics.
 
+Build 10 - the world is sent as one character
+- Builds 8 and 9 put the world's name ("US-PvP") on every message. It is now
+  one number, (region - 1) * 8 + rule-set bits (1 PvP, 2 Roleplay,
+  4 Hardcore), in base 36: "0" US Normal, "1" US PvP, "g" EU Normal. Saves 5
+  to 11 bytes a message. Saved data is still filed under the readable name.
+  Builds 8 and 9 cannot hear build 10.
+
 Build 9 - the character panel names the world
 - The heading above the character used to read "Realm #1". It now shows the
   detected region and rule set, for example "Americas & Oceania, PvP", with

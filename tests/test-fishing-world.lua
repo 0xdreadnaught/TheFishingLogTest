@@ -40,21 +40,41 @@ end
 
 test("the key names region and rule set for every combination", function()
     local cases = {
-        { 1, "US", {}, "US-Normal", "Americas & Oceania, Normal" },
-        { 1, "US", { "PvPRuleset" }, "US-PvP", "Americas & Oceania, PvP" },
-        { 3, "EU", { "RPRuleset" }, "EU-RP", "Europe, Roleplay" },
-        { 2, "KR", { "RPRuleset", "PvPRuleset" }, "KR-RP-PvP", "Korea, Roleplay PvP" },
-        { 4, "TW", { "HardcoreRuleset" }, "TW-HC", "Taiwan, Hardcore" },
-        { 1, "US", { "HardcoreRuleset", "PvPRuleset" }, "US-HC-PvP", "Americas & Oceania, Hardcore PvP" },
-        { 3, nil, { "PvPRuleset" }, "EU-PvP", "Europe, PvP" }, -- no region name call: falls back to the number
+        { 1, "US", {}, "US-Normal", "Americas & Oceania, Normal", "0" },
+        { 1, "US", { "PvPRuleset" }, "US-PvP", "Americas & Oceania, PvP", "1" },
+        { 3, "EU", { "RPRuleset" }, "EU-RP", "Europe, Roleplay", "i" },
+        { 2, "KR", { "RPRuleset", "PvPRuleset" }, "KR-RP-PvP", "Korea, Roleplay PvP", "b" },
+        { 4, "TW", { "HardcoreRuleset" }, "TW-HC", "Taiwan, Hardcore", "s" },
+        { 4, "TW", { "HardcoreRuleset", "RPRuleset", "PvPRuleset" }, "TW-HC-RP-PvP", "Taiwan, Hardcore Roleplay PvP", "v" },
+        { 1, "US", { "HardcoreRuleset", "PvPRuleset" }, "US-HC-PvP", "Americas & Oceania, Hardcore PvP", "5" },
+        { 3, nil, { "PvPRuleset" }, "EU-PvP", "Europe, PvP", "h" },
+        { 3, "Europe!", { "PvPRuleset" }, "EU-PvP", "Europe, PvP", "h" }, -- the key comes from the region number, not its name
+        { 7, nil, {}, "R7-Normal", "R7, Normal", "1c" }, -- a region this build has no name for
     }
+    local codes = {}
     for _, case in ipairs(cases) do
         TheFishingLogDB, TheFishingLogChar = nil, nil
         local c = Enter(case[1], case[2], case[3])
         assert(c.worldKey == case[4], ("expected %s, got %s"):format(case[4], tostring(c.worldKey)))
         assert(c:WorldLabel() == case[5], ("expected %s, got %s"):format(case[5], c:WorldLabel()))
         assert(TheFishingLogChar.world == case[4], "the character should remember its world")
-        assert(not c.worldKey:find("~", 1, true), "the key goes on the wire and must not hold the separator")
+        assert(c.worldCode == case[6], ("%s should be sent as %s, got %s"):format(case[4], case[6], tostring(c.worldCode)))
+        assert(c.worldCode:find("^[0-9a-z]+$"), "the code goes on the wire: base 36 only")
+        assert(codes[c.worldCode] == nil or codes[c.worldCode] == case[4], "two worlds share the code " .. c.worldCode)
+        codes[c.worldCode] = case[4]
+    end
+    -- every region x rule set Forever has gets its own single character
+    local c, seen, count = Addon(), {}, 0
+    for _, region in ipairs({ "US", "KR", "EU", "TW" }) do
+        for _, rule in ipairs({ "Normal", "PvP", "RP", "RP-PvP", "HC", "HC-PvP", "HC-RP", "HC-RP-PvP" }) do
+            local code = c:WorldCode(region .. "-" .. rule)
+            assert(#code == 1 and code ~= "?" and not seen[code], region .. "-" .. rule .. " -> " .. code)
+            seen[code] = true; count = count + 1
+        end
+    end
+    assert(count == 32)
+    for _, bad in ipairs({ "?", "", "US", "US-", "US-Arena", "US-PvP-Arena", "xx-PvP" }) do
+        assert(c:WorldCode(bad) == "?", bad .. " -> " .. c:WorldCode(bad))
     end
 end)
 
@@ -100,6 +120,7 @@ test("a client that can't say yet uses what the character was last time", functi
     TheFishingLogDB = { world = "US-PvP", spots = { a1 = {} } }
     local c = Enter(nil, nil, nil)
     assert(c.worldKey == "US-Normal" and TheFishingLogDB.world == "US-Normal" and TheFishingLogDB.spots == nil)
+    assert(c.worldCode == "0", "the code must come from the remembered key too")
 end)
 
 test("with nothing to go on it changes nothing, then sorts itself out once in the world", function()
@@ -107,14 +128,14 @@ test("with nothing to go on it changes nothing, then sorts itself out once in th
     local spots = { a1 = {} }
     TheFishingLogDB = { spots = spots }
     local c = Enter(nil, nil, nil)
-    assert(c.worldKey == "?" and TheFishingLogDB.world == nil and TheFishingLogDB.spots == spots)
+    assert(c.worldKey == "?" and c.worldCode == "?" and TheFishingLogDB.world == nil and TheFishingLogDB.spots == spots)
     assert(c:WorldLabel() == "an unknown world")
 
     -- unsorted data: adopt it without a reload
     c.db, c.cdb = TheFishingLogDB, TheFishingLogChar
     Client(1, "US", { "PvPRuleset" })
     c.listeners.PLAYER_ENTERING_WORLD[1](c)
-    assert(c.worldKey == "US-PvP" and c.db.world == "US-PvP" and c.cdb.world == "US-PvP" and #c.said == 0)
+    assert(c.worldKey == "US-PvP" and c.worldCode == "1" and c.db.world == "US-PvP" and c.cdb.world == "US-PvP" and #c.said == 0)
 
     -- data loaded is another world's: ask for one reload, once, and leave the data alone
     TheFishingLogChar, TheFishingLogDB = {}, { world = "US-Normal", spots = spots }
@@ -144,28 +165,29 @@ test("messages carry the world, and another world's messages are dropped and cou
     assert(loadfile(source .. "Comm.lua"))("TheFishingLogTest", c)
     c.listeners.TFL_INIT[1](c)
     local pump = F.pump()
-    c.worldKey = "US-PvP"
+    c.worldCode = "1" -- US-PvP
     local heard = 0
     c.handlers.TESTPING = function() heard = heard + 1 end
     local function hear(text) c:Fire("CHAT_MSG_ADDON", c.PREFIX, text, "WHISPER", "Peer") end
 
-    hear("LIVE2~1~US-Normal~TESTPING~1")
-    hear("LIVE2~1~EU-PvP~TESTPING~1")
+    hear("LIVE2~1~0~TESTPING~1") -- US-Normal
+    hear("LIVE2~1~h~TESTPING~1") -- EU-PvP
     hear("LIVE2~1~?~TESTPING~1")
+    hear("LIVE2~1~US-PvP~TESTPING~1") -- builds 8 and 9 sent the name
     hear("LIVE1~1~TESTPING~1") -- a build before 8
     assert(heard == 0, "handled a message from another world")
-    assert(c.otherWorldsHeard == 3, "expected 3 counted, got " .. tostring(c.otherWorldsHeard))
-    hear("LIVE2~1~US-PvP~TESTPING~1")
+    assert(c.otherWorldsHeard == 4, "expected 4 counted, got " .. tostring(c.otherWorldsHeard))
+    hear("LIVE2~1~1~TESTPING~1")
     assert(heard == 1, "did not handle a message from its own world")
     -- a chunked message from another world is put together and then dropped
-    local body = "LIVE2~1~US-Normal~TESTPING~" .. ("x"):rep(300)
+    local body = "LIVE2~1~0~TESTPING~" .. ("x"):rep(300)
     hear("P~7~1~2~" .. body:sub(1, 220)); hear("P~7~2~2~" .. body:sub(221))
-    assert(heard == 1 and c.otherWorldsHeard == 4)
+    assert(heard == 1 and c.otherWorldsHeard == 5)
 
     c:Whisper("Peer", "TESTPING", "1")
     for _ = 1, 5 do F.advance(1); pump() end
-    assert(#wire == 1 and wire[1] == "LIVE2~1~US-PvP~TESTPING~1", tostring(wire[1]))
-    assert(c:CommunicationStatus():find("4 dropped from other worlds", 1, true), c:CommunicationStatus())
+    assert(#wire == 1 and wire[1] == "LIVE2~1~1~TESTPING~1", tostring(wire[1]))
+    assert(c:CommunicationStatus():find("5 dropped from other worlds", 1, true), c:CommunicationStatus())
 end)
 
 if failures > 0 then error(failures .. " world check(s) failed") end

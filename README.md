@@ -43,7 +43,7 @@ git diff 18e3680 HEAD -- . ':!tests' ':!README.md'
 
 The version line is still 1.1.4 on purpose. The build number is the `X-Build` line in the toc and it is never sent to other players.
 
-The network split is four constants: `MF.PREFIX` and `MF.CHANNEL` in `Comm.lua`, `PREFIX` in `Rework/RealmPage.lua`, and `MACRO_NAME` in `Storage.lua`. Message formats are the same as 1.1.4 except the envelope. `LIVE1~<launch>~...` is now `LIVE2~<launch>~<world>~...`, where the world is something like `US-PvP`. That is `World.lua` plus the envelope lines in `Comm.lua`. The region comes from `GetCurrentRegion()` and the rule set from the `PvPRuleset`, `RPRuleset` and `HardcoreRuleset` game rules. I have only checked it on one PvP character.
+The network split is four constants: `MF.PREFIX` and `MF.CHANNEL` in `Comm.lua`, `PREFIX` in `Rework/RealmPage.lua`, and `MACRO_NAME` in `Storage.lua`. Message formats are the same as 1.1.4 except the envelope. `LIVE1~<launch>~...` is now `LIVE2~<launch>~<world>~...`, where the world is one base-36 number for region and rule set (`1` is Americas PvP). That is `World.lua` plus the envelope lines in `Comm.lua`. The region comes from `GetCurrentRegion()` and the rule set from the `PvPRuleset`, `RPRuleset` and `HardcoreRuleset` game rules. I have only checked it on one PvP character.
 
 ## Tests
 
