@@ -22,6 +22,7 @@ ns.FrenzyPage = P
 local SPAN = 2 * 3600       -- the timeline's reach
 local NAME_W = 250          -- the timeline's name column
 local TIMER_W = 96
+local STRIP_TIMER_W = 104   -- test build: room for "starts in 1:02:11" in the strip
 local STAR = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1"
 local CLOCK = "Interface\\Icons\\INV_Misc_PocketWatch_01"
 
@@ -457,12 +458,16 @@ function P:Build(frame)
     self.view = Segments(bar, { { "list", "List", 70 }, { "timeline", "Timeline", 90 } },
         function() return Prefs().view end, function(v) Prefs().view = v end)
     self.view[1]:SetPoint("RIGHT", bar, "RIGHT", -(90 + 2 + 6), 0)
+    bar:HookScript("OnSizeChanged", function() P:LayoutBar() end)
 
     -- The strip: what's on, and the next one where you are
     local strip = W:Panel(frame, 0.85)
     strip:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -6)
     strip:SetPoint("TOPRIGHT", bar, "BOTTOMRIGHT", 0, -6)
     strip:SetHeight(38)
+    -- Test build: three slots that never overlap. The count on the left; the countdown in a
+    -- fixed-width slot beside the button, so the text beside it does not shift as the digits
+    -- change; the place in between, cut short if it does not fit.
     strip.left = W:Label(strip, "GameFontHighlight")
     strip.left:SetPoint("LEFT", 14, 0)
     strip.remind = W:Button(strip, "Remind me", 130, 22, function()
@@ -470,8 +475,16 @@ function P:Build(frame)
         if w then MF:SetFrenzyReminder(w.id, not MF:IsFrenzyReminder(w.id)) P:Refresh() end
     end, "Remind me", "A pop-up and a sound two minutes before every frenzy there, until you turn it off.")
     strip.remind:SetPoint("RIGHT", -10, 0)
+    strip.timer = W:Label(strip, "GameFontHighlightSmall")
+    strip.timer:SetPoint("RIGHT", strip.remind, "LEFT", -12, 0)
+    strip.timer:SetWidth(STRIP_TIMER_W)
+    strip.timer:SetJustifyH("RIGHT")
+    strip.timer:SetWordWrap(false)
     strip.right = W:Label(strip, "GameFontHighlightSmall")
-    strip.right:SetPoint("RIGHT", strip.remind, "LEFT", -12, 0)
+    strip.right:SetPoint("LEFT", strip.left, "RIGHT", 16, 0)
+    strip.right:SetPoint("RIGHT", strip.timer, "LEFT", -8, 0)
+    strip.right:SetJustifyH("LEFT")
+    strip.right:SetWordWrap(false)
     self.strip = strip
 
     self.list = W:VList(frame, Make, Fill)
@@ -487,15 +500,55 @@ function P:Build(frame)
         t.wait = 0
         P:Refresh()
     end)
+    self:LayoutBar()
 end
 
-local function Strip(self, all)
-    local active, soon = 0, 0
-    for _, r in ipairs(all) do
-        if r.active then active = active + 1 elseif r.left <= 3600 then soon = soon + 1 end
-    end
-    self.strip.left:SetText(ORANGE .. active .. " active now|r   " .. MUTED .. soon .. " more start in the next hour|r")
-    -- You're at one, or the next one in your zone
+-- Test build: the filter row was laid out for the full width of the window and its buttons
+-- ran over each other beside the character. Below FULL_BAR_W the buttons are narrower and
+-- the search box takes whatever is left. Returns the width used, for the tests.
+local FULL_BAR_W = 880
+function P:LayoutBar()
+    local bar = self.bar
+    if not (bar and self.search and self.when and self.view) then return end
+    local width = bar:GetWidth() or 0
+    if width <= 0 then return end
+    local full = width >= FULL_BAR_W
+    local whenW = full and { 90, 90, 60 } or { 84, 80, 40 }
+    local viewW = full and { 70, 90 } or { 46, 76 }
+    local gap = full and 14 or 8
+    local label = self.favs.text
+    local favW = 22 + 1 + math.ceil(label and label:GetStringWidth() or 60)
+    local fixed = 6 + gap + (whenW[1] + 2 + whenW[2] + 2 + whenW[3]) + gap + favW + gap + (viewW[1] + 2 + viewW[2]) + 6
+    local searchW = math.max(90, math.min(230, width - fixed))
+    self.search:SetWidth(searchW)
+    for i, b in ipairs(self.when) do b:SetWidth(whenW[i]) end
+    for i, b in ipairs(self.view) do b:SetWidth(viewW[i]) end
+    self.when[1]:ClearAllPoints()
+    self.when[1]:SetPoint("LEFT", self.search, "RIGHT", gap, 0)
+    self.favs:ClearAllPoints()
+    self.favs:SetPoint("LEFT", self.when[#self.when], "RIGHT", gap, 0)
+    self.view[1]:ClearAllPoints()
+    self.view[1]:SetPoint("RIGHT", bar, "RIGHT", -(viewW[2] + 2 + 6), 0)
+    return fixed + searchW
+end
+
+-- A water in the strip. A water with no name of its own is stored as "Desolace water
+-- (59.07, 82.33)": the strip shows the coordinates, and never the word "water".
+local function StripPlace(r, withZone)
+    local name = r.water.name or ""
+    local at = name:match("^.- water %((.-)%)$")
+    if at then return withZone and (r.zone .. " " .. at) or at end
+    return withZone and (name .. ", " .. r.zone) or name
+end
+
+-- What the strip says for these rows: the count, the place, the countdown, and the row the
+-- Remind me button is for.
+--   at a frenzy water        You're at <name>              ends in / starts in
+--   one coming in your zone  Next here  <name or coords>   starts in
+--   otherwise                Next  <zone coords>           starts in
+function P.StripText(all)
+    local active = 0
+    for _, r in ipairs(all) do if r.active then active = active + 1 end end
     local here, nextHere, nextAnywhere
     for _, r in ipairs(all) do
         if r.here then here = r end
@@ -504,18 +557,25 @@ local function Strip(self, all)
         if not r.active and not nextAnywhere then nextAnywhere = r end
     end
     local shown = here or nextHere or nextAnywhere
-    self.nextHere = shown and shown.water or nil
+    local count = ORANGE .. active .. " active|r"
     if here then
-        self.strip.right:SetText(("|cff3ee63eYou're at %s|r - %s"):format(MF:FrenzyShortName(here.water), Timer(here)))
+        local named = not (here.water.name or ""):match("^.- water %(.-%)$")
+        return count, "|cff3ee63eYou're at " .. (named and StripPlace(here) or "a frenzy water") .. "|r", Timer(here), shown
     elseif nextHere then
-        self.strip.right:SetText(("Next in your zone: |cffffffff%s|r, %s"):format(MF:FrenzyShortName(nextHere.water), Timer(nextHere)))
+        return count, MUTED .. "Next here|r  |cffffffff" .. StripPlace(nextHere) .. "|r", Timer(nextHere), shown
     elseif nextAnywhere then
         -- None where you are: the next one to start anywhere, to plan a trip around
-        self.strip.right:SetText(("Next to start: |cffffffff%s|r, %s - %s"):format(
-            MF:FrenzyShortName(nextAnywhere.water), nextAnywhere.zone, Timer(nextAnywhere)))
-    else
-        self.strip.right:SetText(MUTED .. "No frenzy waters in this zone.|r")
+        return count, MUTED .. "Next|r  |cffffffff" .. StripPlace(nextAnywhere, true) .. "|r", Timer(nextAnywhere), shown
     end
+    return count, MUTED .. "No frenzy waters in this zone|r", "", nil
+end
+
+local function Strip(self, all)
+    local count, place, timer, shown = P.StripText(all)
+    self.strip.left:SetText(count)
+    self.strip.right:SetText(place)
+    self.strip.timer:SetText(timer)
+    self.nextHere = shown and shown.water or nil
     self.strip.remind:SetShown(shown ~= nil)
     if shown then self.strip.remind:SetText(shown.remind and "Stop reminding" or "Remind me") end
 end

@@ -12,7 +12,7 @@ for _, key in ipairs({"SetFrameStrata","SetToplevel","SetClampedToScreen","SetMo
     "SetBackdropBorderColor","SetColorTexture","SetTexture","SetTexCoord","SetBlendMode","SetVertexColor",
     "SetStatusBarTexture","SetStatusBarColor","SetAutoFocus","SetClipsChildren","SetOrientation","SetValueStep",
     "SetNormalTexture","SetHighlightTexture","SetPushedTexture","SetResizable","SetResizeBounds","SetWordWrap",
-    "SetSpacing","SetNormalFontObject","LockHighlight","UnlockHighlight","SetSheathed","SetPosition","SetAllPoints"}) do methods[key]=function() end end
+    "SetSpacing","SetChecked","SetNormalFontObject","LockHighlight","UnlockHighlight","SetSheathed","SetPosition","SetAllPoints"}) do methods[key]=function() end end
 function methods:SetScript(k,fn) self.scripts[k]=fn end
 function methods:GetScript(k) return self.scripts[k] end
 function methods:HookScript(k,fn)
@@ -258,4 +258,46 @@ assert(row.xp==nil and row.place:GetText()=="#2345678" and row.place:GetWidth()=
 assert(row.name.points[1][2]==10+P.placeW+4,"the name starts after the place column")
 assert(row.name:GetWidth()==240-(10+P.placeW+4)-6-22,"the name takes what is left, got "..row.name:GetWidth())
 print("PASS: standings rows - bare counts, no podium XP, place column fits, top 100 plus your row")
+
+-- Frenzies page: the strip's three texts, and a filter row that fits its page.
+function MF:FormatClock(s) return ("%d:%02d"):format(math.floor(s/60),s%60) end
+local frenzyDef
+J.AddPage=function(self,def) if def.key=="frenzies" then frenzyDef=def end;return realAdd(self,def) end
+load("Rework/FrenzyPage.lua");J.AddPage=realAdd
+assert(frenzyDef,"frenzies page did not register")
+local FP=MF.Rework.FrenzyPage
+local fpage=CreateFrame("Frame");fpage:SetSize(563,400)
+MF.cdb.frenzyPage=nil
+frenzyDef.build(fpage,MF)
+local function plain(text) return (text:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r","")) end
+local unnamed={water={name="Desolace water (59.07, 82.33)"},zone="Desolace",left=131}
+local named={water={name="Lake Elune'ara"},zone="Moonglade",left=3725}
+local on={water={name="Tirisfal Glades water (61.20, 52.10)"},zone="Tirisfal Glades",active=true,left=95}
+-- nothing where you are: the next one anywhere, zone first, no "Water at", no dashes
+local count,place,timer,shown=FP.StripText({on,on,unnamed,named})
+assert(plain(count)=="2 active" and plain(place)=="Next  Desolace 59.07, 82.33" and plain(timer)=="starts in 2:11",plain(place).." | "..plain(timer))
+assert(shown==unnamed and not plain(place):find("[Ww]ater") and not plain(place):find(" %- "))
+count,place=FP.StripText({named});assert(plain(place)=="Next  Lake Elune'ara, Moonglade",plain(place))
+-- one coming in your zone: the zone is not repeated
+unnamed.localZone=true
+count,place,timer=FP.StripText({on,unnamed});assert(plain(place)=="Next here  59.07, 82.33",plain(place))
+-- standing at one
+on.here=true
+count,place,timer,shown=FP.StripText({on,unnamed})
+assert(plain(place)=="You're at a frenzy water" and plain(timer)=="ends in 1:35" and shown==on,plain(place).." | "..plain(timer))
+named.here=true;count,place=FP.StripText({named});assert(plain(place)=="You're at Lake Elune'ara")
+count,place,timer,shown=FP.StripText({});assert(plain(count)=="0 active" and timer=="" and shown==nil)
+-- the built strip: the place is tied between the count and a fixed-width countdown
+local strip=FP.strip
+assert(strip.timer:GetWidth()==104 and strip.timer.points[1][2]==strip.remind)
+assert(#strip.right.points==2 and strip.right.points[1][2]==strip.left and strip.right.points[2][2]==strip.timer)
+-- the filter row never needs more than the page has, down to the narrowest page seen in game
+for _,width in ipairs({563,600,728,880,1080}) do
+    FP.bar:SetSize(width,26)
+    local used=FP:LayoutBar()
+    assert(used<=width,("filter row needs %d of %d"):format(used,width))
+    assert(FP.search:GetWidth()>=90 and FP.search:GetWidth()<=230)
+end
+FP.bar:SetSize(1080,26);FP:LayoutBar();assert(FP.when[1]:GetWidth()==90 and FP.search:GetWidth()==230,"full width keeps the original sizes")
+print("PASS: frenzy strip wording and slots; filter row fits its page")
 print("PASS: fishing outfit preservation, weapon slots, delayed models, refresh events, rank/XP, camera, and journal integration")

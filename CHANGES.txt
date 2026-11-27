@@ -6,6 +6,22 @@ CurseForge. This build only sees anglers who run the test build.
 Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
 X-Build line in the toc and shows in the journal title and diagnostics.
 
+Build 13 - Frenzies page: strip and filter row
+- The strip under the filters had two texts anchored to opposite ends with no
+  width, so in the narrower page they were drawn over each other, and the
+  right one slid about every second as the countdown's width changed. It is
+  now three slots: the count ("23 active"), the place, and the countdown in a
+  fixed-width slot beside Remind me.
+- Wording: "Next  Desolace 59.07, 82.33" and "starts in 2:11", in place of
+  "Next to start: Water at 59.07, 82.33, Desolace - starts in 2:11". In your
+  own zone it is "Next here  59.07, 82.33"; at a frenzy water, "You're at
+  <name>". The strip never says "water" for a water that has no name.
+- "N more start in the next hour" is gone from the strip. The Next hour
+  filter lists them.
+- The filter row (search, Active now / Next hour / All, Favourites, List /
+  Timeline) fits the page: narrower buttons and a search box that takes what
+  is left, instead of buttons drawn over each other.
+
 Build 12 - bounty standings tidied
 - Podium rows no longer repeat the XP they pay. "Podium pays ..." above the
   list already says it.
