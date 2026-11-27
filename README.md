@@ -1,96 +1,60 @@
 # The Fishing Log (Test)
 
-> ## This is a TEST BUILD. It is not the main addon.
->
-> **Looking for The Fishing Log? Get it on
-> [CurseForge](https://www.curseforge.com/wow/addons/the-fishing-log).** That is the real addon.
->
-> - This build **only sees other players who run this test build.** Your realm will look
->   almost empty: no records, bounty standings, matches or events from players on the main addon.
-> - It keeps **its own saved data**, separate from the main addon's.
-> - It can change or break at any time, and it is not supported by the addon's author.
-> - Install it only if you want to help test.
+This is a test build of [The Fishing Log](https://www.curseforge.com/wow/addons/the-fishing-log) for WoW: Forever. It is not the main addon. If you just want to fish, install that one from CurseForge and ignore this.
 
-This repository exists so the addon's author and testers can read the changes, run
-them, and pull updates. It is not a release and not a replacement for the addon
-on CurseForge.
+I use The Fishing Log and wanted to try some changes to it. This is my working copy, put here so the author and anyone who feels like testing can read the code and pull updates. None of it is official and it can break.
 
-**Credits and rights.** The Fishing Log is the work of its author (listed as "Jake"
-in the addon's own `.toc` file). No licence to the original addon's code is granted
-here; all rights to it remain with its author. The built-in look is based on
-Godfall's UI Rework (MIT, see `LICENSE-UIRework.txt`); bundled libraries keep their
-own licences (`Libs/README.txt`). Everything that differs from the original is
-listed in [`CHANGES.txt`](CHANGES.txt).
+It only talks to other copies of the test build, so your realm is going to look empty: no records, bounties, matches or events from anyone on the main addon. It also keeps its own saved data, so your real log isn't touched.
 
-## What is different
+## What's changed
 
-- **Character panel** in the journal (build 1).
-- **Record sync fixes**: whisper follow-ups, relaying records of offline
-  holders, transfer time-outs (build 2).
-- **Sync alerts and reports**, local only (build 3).
-- **Says what it is** (build 5): a chat line at login and the AddOns list
-  tooltip state that this is the test build.
-- **A network of its own** (build 4): this build only talks to other copies of
-  this build. It uses its own addon-message prefixes (`FishingLogTest`,
-  `TFLUIFaceTest`), its own finder channel (`TheFishingLogTest`) and its own
-  save-macro names (`TFL Test 1..4`). Players on the original addon neither
-  see nor receive anything from it. Message formats, the launch-date envelope
-  and all shared tables are unchanged from 1.1.4.
+Based on 1.1.4. The full notes are in [CHANGES.txt](CHANGES.txt).
 
-The version line stays `1.1.4`. The build number is the `X-Build` line in the
-toc; it shows in the journal title and in diagnostics and is never sent.
+- A character panel on the left side of the journal that shows your fishing outfit.
+- Record sync fixes. Whisper replies go back to whoever asked, record books pass along records held by people who are offline, and large transfers time out properly.
+- A sync report that opens after a sync and shows what came in.
+- Its own message prefix and channel, which is why it can't see the main addon.
+- A chat message at login saying it's the test build.
 
-## Reading the changes
+## Install
 
-The history is one commit per step, on top of the untouched original:
+The folder has to be named `TheFishingLogTest` or the game won't load it.
 
-| Commit | Contents |
-|---|---|
-| The Fishing Log 1.1.4 by Jake, unmodified | the base to compare against |
-| Test build 1 .. 4 | one commit per build |
-| Tests and README | mock-client tests, this file |
-| later commits | one per build or fix |
+With git, from `World of Warcraft\_forever_\Interface\AddOns`:
 
-`git diff 18e3680 HEAD -- . ':!tests' ':!README.md'` shows every change
-to the addon in one diff.
+```
+git clone https://github.com/0xdreadnaught/TheFishingLogTest.git TheFishingLogTest
+```
 
-## Installing
+Run `git pull` in that folder to update. If you download the ZIP instead, rename the folder after unpacking, because GitHub adds `-main` to the name.
 
-The game only loads an addon whose folder has the same name as its `.toc`, so
-the folder must be called `TheFishingLogTest`.
+Restart the game. A `/reload` won't find a new addon. In the AddOns list turn on "The Fishing Log (Test)" and turn off the original. If both are on, the test build shuts itself off and tells you so at login.
 
-- **With git:** in `World of Warcraft\_forever_\Interface\AddOns`, run
-  `git clone <this repository's URL> TheFishingLogTest`. Update later with
-  `git pull` inside that folder.
-- **From a ZIP:** download, unpack, and rename the folder to
-  `TheFishingLogTest` (GitHub adds the branch name to it).
+The test build starts with an empty log. To bring yours over, log out, then copy `TheFishingLog.lua` to `TheFishingLogTest.lua` in `WTF\Account\YOURACCOUNT\SavedVariables`. Do the same in each character's `SavedVariables` folder.
 
-Then:
+## For the author
 
-1. Restart the game client (a `/reload` does not pick up a new addon).
-2. In the AddOns list, tick **The Fishing Log (Test)** and untick the original
-   **The Fishing Log**. With both ticked the test build stays switched off and
-   says so at login.
-3. The test build keeps its own saved data, filed under its folder name. It
-   starts empty and does not touch the original's data. To start from your
-   existing log, log out and copy `TheFishingLog.lua` to
-   `TheFishingLogTest.lua` in `WTF\Account\<account>\SavedVariables` and in
-   each character's `SavedVariables` folder.
+The first real commit is 1.1.4 untouched (`18e3680`), then one commit per build. This shows everything I changed:
 
-You will only see other anglers who run this build.
+```
+git diff 18e3680 HEAD -- . ':!tests' ':!README.md'
+```
+
+The version line is still 1.1.4 on purpose. The build number is the `X-Build` line in the toc and it is never sent to other players.
+
+The network split is four constants: `MF.PREFIX` and `MF.CHANNEL` in `Comm.lua`, `PREFIX` in `Rework/RealmPage.lua`, and `MACRO_NAME` in `Storage.lua`. Message formats are the same as 1.1.4.
 
 ## Tests
 
-The tests load the real addon files against a small mock of the game client.
-They need Node.js and no game.
+The tests run the real addon files against a fake game client. You need Node.
 
 ```
 cd tests/lua-parser && npm ci && cd ../..
 bash tests/run-all.sh
 ```
 
-`tests/legacy-1.1.4/Records.lua` is the original 1.1.4 file, used as the
-"unmodified client" in the sync tests.
+They can't tell you how anything looks or whether two real players sync. Nobody has confirmed two test builds finding each other in game yet.
 
-Mock tests do not show rendering or real player-to-player delivery. As of
-build 4, two clients finding each other in game has not been confirmed yet.
+## Credit
+
+The Fishing Log is Jake's addon (that's the name in the toc). The original code is his. I'm not claiming it and this repo doesn't license it to anyone. The journal look comes from Godfall's UI Rework, which is MIT (`LICENSE-UIRework.txt`). Library licences are listed in `Libs/README.txt`.
