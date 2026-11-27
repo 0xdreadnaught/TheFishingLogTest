@@ -6,6 +6,21 @@ CurseForge. This build only sees anglers who run the test build.
 Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
 X-Build line in the toc and shows in the journal title and diagnostics.
 
+Build 18 - channel probes
+- Result of build 17's test: on client 1.60.1 an addon message sent to a
+  custom channel is accepted and comes back. The assumption in Comm.lua that
+  Forever refuses them does not hold today. The addon still syncs by member
+  list and whispers; these commands measure what a channel design can rely on.
+- /tfl channeltest slots: joins numbered throwaway channels until the client
+  stops taking them, says how many a player can be in at once and which
+  numbers they were given, then leaves them all.
+- /tfl channeltest rate: 45 numbered messages on the finder channel at 2, 5
+  and 10 a second, sent directly. Says how many the client accepted, throttled
+  and returned at each speed. Other test builds count how many they heard
+  (/tfl clientdiag).
+- /tfl channeltest also says which channel number and name the message
+  arrived with.
+
 Build 17 - /tfl channeltest
 - The addon assumes Forever refuses addon messages on custom chat channels
   and never tries (Comm.lua, CUSTOM_CHANNEL_SUPPORTED = false). This command

@@ -203,6 +203,99 @@ test("/tfl channeltest sends exactly one message and reports refused, came back,
     assert(ok, err)
 end)
 
+test("/tfl channeltest slots counts how many channels fit and leaves every test channel again", function()
+    local names = { "CreateFrame", "C_ChatInfo", "GetChannelName", "C_Timer", "GetTime", "JoinTemporaryChannel", "LeaveChannelByName",
+        "GetChannelList", "MAX_WOW_CHAT_CHANNELS", "ChatFrame_AddMessageEventFilter" }
+    local saved = {}
+    for _, n in ipairs(names) do saved[n] = _G[n] end
+    local ok, err = pcall(function()
+        local timers, filters = {}, {}
+        C_Timer = { After = function(_, fn) timers[#timers + 1] = fn end }
+        local function settle() for _ = 1, 200 do if #timers == 0 then return end local fn = table.remove(timers, 1); fn() end error("never settled") end
+        GetTime = function() return 1000 end
+        CreateFrame = function() return { RegisterEvent = function() end, SetScript = function() end } end
+        ChatFrame_AddMessageEventFilter = function(event, fn) filters[event] = fn end
+        MAX_WOW_CHAT_CHANNELS = 10
+        local slots = { [1] = "General", [2] = "Trade", [6] = "TheFishingLogTest" } -- number -> name
+        local function count() local n = 0 for _ in pairs(slots) do n = n + 1 end return n end
+        GetChannelName = function(name) for id, n in pairs(slots) do if n == name then return id end end return 0 end
+        GetChannelList = function() local out = {} for id, n in pairs(slots) do out[#out + 1] = id; out[#out + 1] = n; out[#out + 1] = false end return table.unpack(out) end
+        JoinTemporaryChannel = function(name) if count() >= 10 then return end for id = 1, 10 do if not slots[id] then slots[id] = name return end end end
+        LeaveChannelByName = function(name) for id, n in pairs(slots) do if n == name then slots[id] = nil end end end
+        local c, said, commands = { listeners = {}, ADDON = "TheFishingLogTest", PREFIX = "FishingLogTest", CHANNEL = "TheFishingLogTest" }, {}, {}
+        function c:On() end
+        function c:Print(msg) said[#said + 1] = msg end
+        function c:Command(name, _, _, fn) commands[name] = fn end
+        assert(loadfile(source .. "TestBuild.lua"))("TheFishingLogTest", c)
+        commands.channeltest(c, { "slots" })
+        commands.channeltest(c, { "slots" }) -- typed again while running
+        settle()
+        local text = table.concat(said, " | ")
+        assert(text:find("stated limit is 10. You are in 3 now; ours is number 6", 1, true), text)
+        assert(text:find("already running", 1, true), text)
+        assert(text:find("joined 7 more before the client stopped taking them, so 10 at once", 1, true), text)
+        assert(text:find("given the numbers 3 4 5 7 8 9 10", 1, true), text)
+        assert(text:find("left 8 of 8 test channels. Ours was number 6 and is now 6", 1, true), text)
+        assert(count() == 3, "test channels left behind: " .. count())
+        -- the join and leave notices for the test channels are kept out of chat; others are not
+        assert(filters.CHAT_MSG_CHANNEL_NOTICE(nil, nil, "YOU_JOINED", "", "", "7. TFLTestProbe4") == true)
+        assert(not filters.CHAT_MSG_CHANNEL_NOTICE(nil, nil, "YOU_JOINED", "", "", "2. Trade"))
+    end)
+    for _, n in ipairs(names) do _G[n] = saved[n] end
+    assert(ok, err)
+end)
+
+test("/tfl channeltest rate sends 45 messages, counts accepted, throttled and returned, and hears others' runs", function()
+    local names = { "CreateFrame", "C_ChatInfo", "GetChannelName", "C_Timer", "GetTime", "Enum" }
+    local saved = {}
+    for _, n in ipairs(names) do saved[n] = _G[n] end
+    local ok, err = pcall(function()
+        local timers, frames, sent, clock = {}, {}, {}, 1000
+        C_Timer = { After = function(delay, fn) timers[#timers + 1] = { at = delay, fn = fn, order = #timers } end }
+        local function settle()
+            table.sort(timers, function(a, b) if a.at ~= b.at then return a.at < b.at end return a.order < b.order end)
+            local run = timers; timers = {}
+            for _, t in ipairs(run) do t.fn() end
+        end
+        GetTime = function() return clock end
+        CreateFrame = function() local f = {} function f:RegisterEvent() end function f:SetScript(_, fn) self.handler = fn end frames[#frames + 1] = f return f end
+        local function deliver(text, sender) for _, f in ipairs(frames) do if f.handler then f.handler(f, "CHAT_MSG_ADDON", "FishingLogTest", text, "CHANNEL", sender) end end end
+        Enum = { SendAddonMessageResult = { Success = 0, AddonMessageThrottle = 3 } }
+        GetChannelName = function() return 6 end
+        C_ChatInfo = { SendAddonMessage = function(_, msg, dist, target)
+            sent[#sent + 1] = msg
+            assert(dist == "CHANNEL" and target == 6)
+            local step = tonumber(msg:match("^CHRATE~%d+~(%d)~"))
+            if step == 3 and #sent % 2 == 0 then return 3 end -- the fastest step is throttled half the time
+            deliver(msg, "Somebody Else") -- our own echo, with a sender name the addon wouldn't recognise as us
+            return 0
+        end }
+        local c, said, commands = { listeners = {}, ADDON = "TheFishingLogTest", PREFIX = "FishingLogTest", CHANNEL = "TheFishingLogTest" }, {}, {}
+        function c:On() end
+        function c:Print(msg) said[#said + 1] = msg end
+        function c:IsMe() return false end
+        function c:Command(name, _, _, fn) commands[name] = fn end
+        assert(loadfile(source .. "TestBuild.lua"))("TheFishingLogTest", c)
+        commands.channeltest(c, { "rate" })
+        commands.channeltest(c, { "rate" }) -- again straight away: refused
+        settle()
+        local text = table.concat(said, " | ")
+        assert(#sent == 45, "sent " .. #sent)
+        assert(sent[1]:find("^CHRATE~%d+~1~1~45$") and sent[45]:find("^CHRATE~%d+~3~20~45$"), sent[1] .. " .. " .. sent[45])
+        assert(text:find("wait a minute between runs", 1, true), text)
+        assert(text:find("2 a second: 10 sent, 10 accepted, 0 throttled, 0 refused, 10 came back", 1, true), text)
+        assert(text:find("5 a second: 15 sent, 15 accepted, 0 throttled, 0 refused, 15 came back", 1, true), text)
+        assert(text:find("10 a second: 20 sent, 10 accepted, 10 throttled, 0 refused, 10 came back", 1, true), text)
+        assert(c.rateTestHeard == nil, "our own run was counted as someone else's")
+        -- another player's run: 3 of their 45 reach us
+        for seq = 1, 3 do deliver("CHRATE~424242~1~" .. seq .. "~45", "Peer") end
+        assert(c.rateTestHeard.n == 3 and c.rateTestHeard.total == 45)
+        assert(table.concat(c:WorldProbeLines(), "\n"):find("last rate test heard: 3 of 45", 1, true))
+    end)
+    for _, n in ipairs(names) do _G[n] = saved[n] end
+    assert(ok, err)
+end)
+
 test("world probe reports what the client says and survives a client that says nothing", function()
     local c = { listeners = {}, ADDON = "TheFishingLogTest", cdb = { realm = "Kept" } }
     function c:On(event, fn) self.listeners[event] = self.listeners[event] or {}; table.insert(self.listeners[event], fn) end

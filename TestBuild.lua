@@ -83,11 +83,13 @@ function MF:ChannelSendTest()
     if not channelTest.frame and CreateFrame then
         channelTest.frame = CreateFrame("Frame")
         channelTest.frame:RegisterEvent("CHAT_MSG_ADDON")
-        channelTest.frame:SetScript("OnEvent", function(_, _, prefix, text, dist)
-            if channelTest.listen and prefix == MF.PREFIX then channelTest.listen(text, dist) end
+        channelTest.frame:SetScript("OnEvent", function(_, _, prefix, text, dist, _, _, _, number, name)
+            if channelTest.listen and prefix == MF.PREFIX then channelTest.listen(text, dist, number, name) end
         end)
     end
-    channelTest.listen = function(text, dist) if text == payload then heard = tostring(dist) end end
+    channelTest.listen = function(text, dist, number, name)
+        if text == payload then heard = tostring(dist) .. ", marked as channel " .. tostring(number) .. " \"" .. tostring(name) .. "\"" end
+    end
     local ok, result = pcall(send, self.PREFIX, payload, "CHANNEL", id)
     local name
     for key, value in pairs(type(Enum) == "table" and type(Enum.SendAddonMessageResult) == "table" and Enum.SendAddonMessageResult or {}) do
@@ -110,9 +112,134 @@ function MF:ChannelSendTest()
     end
     if C_Timer and C_Timer.After then C_Timer.After(5, Verdict) else Verdict() end
 end
+
+-- How many chat channels can one player be in at once? Joins numbered throwaway channels
+-- until the client stops taking them, reports the count and the numbers they were given,
+-- then leaves them all again. Takes up to a minute. /tfl channeltest slots
+local PROBE = "TFLTestProbe"
+local slotTest
+local function JoinedNumber(name)
+    local id = type(GetChannelName) == "function" and GetChannelName(name)
+    return type(id) == "number" and id > 0 and id or nil
+end
+local function ChannelsJoined()
+    if type(GetChannelList) ~= "function" then return nil end
+    return math.floor(select("#", GetChannelList()) / 3)
+end
+function MF:ChannelSlotTest()
+    local say = function(text) self:Print("Channel slots: " .. text) end
+    if slotTest then return say("already running.") end
+    if type(JoinTemporaryChannel) ~= "function" or type(LeaveChannelByName) ~= "function" or not (C_Timer and C_Timer.After) then
+        return say("this client has no way to try.")
+    end
+    local cap = tonumber(MAX_WOW_CHAT_CHANNELS)
+    local before, ours = ChannelsJoined(), JoinedNumber(self.CHANNEL)
+    slotTest = { tried = 0, numbers = {} }
+    say(("the client's stated limit is %s. You are in %s now; ours is number %s. Joining test channels, one every 2 seconds..."):format(
+        cap and tostring(cap) or "not stated", before and tostring(before) or "?", ours and tostring(ours) or "not joined"))
+    local limit = math.min(30, (cap or 20) + 2)
+    local function Finish(refused)
+        local t = slotTest
+        for i = 1, t.tried do pcall(LeaveChannelByName, PROBE .. i) end
+        C_Timer.After(3, function()
+            local left, after = 0, JoinedNumber(self.CHANNEL)
+            for i = 1, t.tried do if not JoinedNumber(PROBE .. i) then left = left + 1 end end
+            say(("joined %d more%s, so %s at once. They were given the numbers %s."):format(#t.numbers,
+                refused and " before the client stopped taking them" or " and stopped there (the test's own limit)",
+                before and tostring(before + #t.numbers) or "?", #t.numbers > 0 and table.concat(t.numbers, " ") or "none"))
+            say(("left %d of %d test channels. Ours was number %s and is now %s."):format(left, t.tried,
+                ours and tostring(ours) or "not joined", after and tostring(after) or "not joined"))
+            slotTest = nil
+        end)
+    end
+    local function Step(retried)
+        local t = slotTest
+        if t.tried > 0 then
+            local id = JoinedNumber(PROBE .. t.tried)
+            if id then t.numbers[#t.numbers + 1] = id
+            elseif not retried then return C_Timer.After(2, function() Step(true) end) -- a slow answer is not a refusal
+            else return Finish(true) end
+        end
+        if t.tried >= limit then return Finish(false) end
+        t.tried = t.tried + 1
+        pcall(JoinTemporaryChannel, PROBE .. t.tried)
+        C_Timer.After(2, function() Step(false) end)
+    end
+    Step(false)
+end
+
+-- How fast can one player send on the channel? 45 numbered messages in three steps (2, 5 and
+-- 10 a second, about 12 seconds), sent straight to the client, not through the addon's own
+-- one-a-second queue. Reports for each step how many the client accepted, how many it
+-- throttled, and how many came back. Other test builds count how many they heard.
+-- /tfl channeltest rate
+local RATE_STEPS = { { 2, 10 }, { 5, 15 }, { 10, 20 } }
+local rateTest = { at = -math.huge }
+function MF:ChannelRateTest()
+    local say = function(text) self:Print("Channel rate: " .. text) end
+    local send = C_ChatInfo and C_ChatInfo.SendAddonMessage
+    if type(send) ~= "function" or not (C_Timer and C_Timer.After) then return say("this client has no way to try.") end
+    local now = GetTime()
+    if now - rateTest.at < 60 then return say("wait a minute between runs.") end
+    if not JoinedNumber(self.CHANNEL) then return say("not in the " .. tostring(self.CHANNEL) .. " channel yet. Type /tfl sync, wait a minute and try again.") end
+    rateTest.at = now
+    local nonce, total = tostring(math.random(100000, 999999)), 0
+    for _, step in ipairs(RATE_STEPS) do total = total + step[2] end
+    local results = {}
+    rateTest.nonce = nonce
+    rateTest.listen = function(text)
+        local n, step = text:match("^CHRATE~(%d+)~(%d)~")
+        if n == nonce and results[tonumber(step)] then results[tonumber(step)].back = results[tonumber(step)].back + 1 end
+    end
+    local throttle = type(Enum) == "table" and type(Enum.SendAddonMessageResult) == "table" and Enum.SendAddonMessageResult.AddonMessageThrottle
+    local at = 0
+    for index, step in ipairs(RATE_STEPS) do
+        local r = { rate = step[1], sent = 0, ok = 0, throttled = 0, refused = 0, back = 0 }
+        results[index] = r
+        for seq = 1, step[2] do
+            C_Timer.After(at, function()
+                local id = JoinedNumber(self.CHANNEL) -- by name every time: the number can change
+                if not id then r.refused = r.refused + 1 return end
+                local ok, result = pcall(send, self.PREFIX, ("CHRATE~%s~%d~%d~%d"):format(nonce, index, seq, total), "CHANNEL", id)
+                r.sent = r.sent + 1
+                if ok and (result == nil or result == true or result == 0) then r.ok = r.ok + 1
+                elseif ok and throttle ~= nil and result == throttle then r.throttled = r.throttled + 1
+                else r.refused = r.refused + 1 end
+            end)
+            at = at + 1 / step[1]
+        end
+        at = at + 1 -- a breath between steps
+    end
+    say(("sending %d messages over about %d seconds..."):format(total, math.ceil(at)))
+    C_Timer.After(at + 5, function()
+        rateTest.listen = nil
+        for _, r in ipairs(results) do
+            say(("%d a second: %d sent, %d accepted, %d throttled, %d refused, %d came back."):format(
+                r.rate, r.sent, r.ok, r.throttled, r.refused, r.back))
+        end
+    end)
+end
+
 if MF.Command then
-    MF:Command("channeltest", "Other", "/tfl channeltest - test build: can addon messages use the finder channel?",
-        function(self) self:ChannelSendTest() end)
+    MF:Command("channeltest", "Other",
+        "/tfl channeltest - test build: can addon messages use the finder channel? (also: slots, rate)",
+        function(self, args)
+            local what = args and args[1]
+            if what == "slots" then self:ChannelSlotTest()
+            elseif what == "rate" then self:ChannelRateTest()
+            else self:ChannelSendTest() end
+        end)
+end
+-- The test channels come and go quietly.
+if ChatFrame_AddMessageEventFilter then
+    local function Quiet(_, _, ...)
+        for i = 1, select("#", ...) do
+            local v = select(i, ...)
+            if type(v) == "string" and v:find(PROBE, 1, true) then return true end
+        end
+    end
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_CHANNEL_NOTICE", Quiet)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_CHANNEL_NOTICE_USER", Quiet)
 end
 -- Someone else's test arriving on the channel proves the route for everyone who hears it.
 do
@@ -120,9 +247,22 @@ do
     if f then
         f:RegisterEvent("CHAT_MSG_ADDON")
         f:SetScript("OnEvent", function(_, _, prefix, text, dist, sender)
-            if prefix ~= MF.PREFIX or type(text) ~= "string" or dist ~= "CHANNEL" or not text:find("^CHTEST~%d+$") then return end
-            if MF.IsMe and type(sender) == "string" and MF:IsMe(sender) then return end
-            MF.channelTestsHeard = (MF.channelTestsHeard or 0) + 1
+            if prefix ~= MF.PREFIX or type(text) ~= "string" or dist ~= "CHANNEL" then return end
+            local mine = MF.IsMe and type(sender) == "string" and MF:IsMe(sender)
+            if text:find("^CHRATE~") then
+                -- Ours is told apart by its number, not by the sender's name.
+                local nonce, total = text:match("^CHRATE~(%d+)~%d~%d+~(%d+)$")
+                if nonce and nonce == rateTest.nonce then
+                    if rateTest.listen then rateTest.listen(text) end
+                elseif nonce then
+                    -- someone else's rate test: how many of theirs reached us
+                    local heard = MF.rateTestHeard
+                    if not heard or heard.nonce ~= nonce then heard = { nonce = nonce, n = 0, total = tonumber(total) } MF.rateTestHeard = heard end
+                    heard.n = heard.n + 1
+                end
+            elseif text:find("^CHTEST~%d+$") and not mine then
+                MF.channelTestsHeard = (MF.channelTestsHeard or 0) + 1
+            end
         end)
     end
 end
@@ -165,7 +305,10 @@ function MF:WorldProbeLines()
     Line("key", Show(self.worldKey) .. " | sent as " .. Show(self.worldCode) .. " | " .. (self.WorldLabel and self:WorldLabel() or "?") .. " | saved data holds " .. Show(self.db and self.db.world)
         .. " | parked " .. Show(self.db and self.db.worlds and (function() local n = {} for k in pairs(self.db.worlds) do n[#n + 1] = k end table.sort(n) return table.concat(n, " ") end)() or "")
         .. " | other-world messages dropped " .. tostring(self.otherWorldsHeard or 0))
-    Line("channel test heard", tostring(self.channelTestsHeard or 0) .. " from other players this session")
+    Line("channel test heard", tostring(self.channelTestsHeard or 0) .. " from other players this session"
+        .. " | last rate test heard: " .. (self.rateTestHeard and (self.rateTestHeard.n .. " of " .. tostring(self.rateTestHeard.total)) or "none"))
+    Line("channel slots", "stated limit " .. tostring(MAX_WOW_CHAT_CHANNELS) .. " | joined now " .. tostring(ChannelsJoined())
+        .. " | ours is number " .. tostring(JoinedNumber(self.CHANNEL or "")))
     Line("builds", "mine " .. tostring(Mine()) .. " | heard this session: " .. self:BuildsHeardText())
     Line("region", Call("GetCurrentRegion") .. " | name " .. Call("GetCurrentRegionName"))
     Line("realm name", Call("GetRealmName") .. " | normalized " .. Call("GetNormalizedRealmName")

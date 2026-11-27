@@ -63,4 +63,4 @@ cd tests/lua-parser && npm ci && cd ../..
 bash tests/run-all.sh
 ```
 
-They can't tell you how anything looks or whether two real players sync. Nobody has confirmed two test builds finding each other in game yet.
+They can't tell you how anything looks or whether two real players sync. Two test builds have found each other in game and started a sync. I haven't checked yet that everything arrives.
