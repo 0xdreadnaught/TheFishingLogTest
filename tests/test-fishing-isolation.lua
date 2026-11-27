@@ -362,17 +362,20 @@ test("a locked channel: the password box is closed, the next name is used, and i
         local said = {}
         function c:Print(msg) said[#said + 1] = msg end
         local lockedNames, inside, asked, left, nextID = { TheFishingLogTest = true, TheFishingLogTest2 = true }, {}, {}, {}, 5
-        local box -- the channel the password box is asking about, if it is up
-        StaticPopup1 = {}
-        StaticPopup_Visible = function(which) if which == "CHAT_CHANNEL_PASSWORD" and box then StaticPopup1.data = box return "StaticPopup1" end end
-        StaticPopup_Hide = function(which, data) if which == "CHAT_CHANNEL_PASSWORD" and data == box then box = nil end end
+        -- the game's password box, as the numbered popup frame older clients use
+        local dialog = { which = "CHAT_CHANNEL_PASSWORD", shown = false }
+        function dialog:IsShown() return self.shown end
+        function dialog:Hide() self.shown = false end
+        local function show(name) dialog.shown, dialog.data = true, name end
+        StaticPopup1 = dialog
+        StaticPopup_Visible, StaticPopup_Hide = nil, nil
         GetChannelName = function(name) return inside[name] or 0, name end
         JoinTemporaryChannel = function(name)
             asked[#asked + 1] = name
             if lockedNames[name] then
                 -- the server's answer arrives after the call returns, as it does in the game
                 C_Timer.After(0, function()
-                    box = name
+                    show(name)
                     c:Fire("CHANNEL_PASSWORD_REQUEST", name)
                     c:Fire("CHAT_MSG_CHANNEL_NOTICE", "WRONG_PASSWORD", "", "", name, "", "", 0, 0, name)
                 end)
@@ -392,7 +395,7 @@ test("a locked channel: the password box is closed, the next name is used, and i
         settle(10)
         assert(table.concat(asked, ",") == "TheFishingLogTest,TheFishingLogTest2,TheFishingLogTest3", table.concat(asked, ","))
         assert(c.CHANNEL == "TheFishingLogTest3" and inside.TheFishingLogTest3, "should have settled in the first open name")
-        assert(box == nil and c.passwordBoxesClosed >= 2, "a password box was left on screen")
+        assert(not dialog.shown and c.passwordBoxesClosed == 2 and c.passwordBoxClosedBy == "numbered frame", "a password box was left on screen")
         assert(c.channelLocks == 2 and #said == 1 and said[1]:find("locked the channel", 1, true), "told once: " .. #said)
         assert(c:DiscoveryJoinStatus():find("TheFishingLogTest3", 1, true), c:DiscoveryJoinStatus())
         -- the chat lines about our other names stay hidden, and so does nothing else
@@ -400,10 +403,10 @@ test("a locked channel: the password box is closed, the next name is used, and i
         assert(c:IsDiscoveryChannelNotice("WRONG_PASSWORD", "Trade", "Trade") == false)
 
         -- a password box for a channel of the player's own is left alone
-        box = "MyGuildChannel"
+        show("MyGuildChannel")
         c:ChannelLocked("TheFishingLogTest", "WRONG_PASSWORD"); F.flush()
-        assert(box == "MyGuildChannel", "closed a password box that was not ours")
-        box = nil
+        assert(dialog.shown, "closed a password box that was not ours")
+        dialog.shown = false
 
         -- /tfl channeltest base: the same walk against a stand-in name, leaving the real channel alone
         local timer = C_Timer
@@ -414,7 +417,7 @@ test("a locked channel: the password box is closed, the next name is used, and i
         said = {}
         c:ChannelBaseTest("TFLLockTest")
         settle(15)
-        assert(table.concat(asked, ",") == "TFLLockTest,TFLLockTest2" and c.CHANNEL == "TFLLockTest2" and box == nil, table.concat(asked, ",") .. " / " .. c.CHANNEL)
+        assert(table.concat(asked, ",") == "TFLLockTest,TFLLockTest2" and c.CHANNEL == "TFLLockTest2" and not dialog.shown, table.concat(asked, ",") .. " / " .. c.CHANNEL)
         assert(left[1] == "TheFishingLogTest3", "leaves the real channel it was in")
         -- (the fixture runs every timer on the next tick, so the 12-second report comes early here; only its shape is checked)
         local report = table.concat(said, " | ")
@@ -434,7 +437,7 @@ test("a locked channel: the password box is closed, the next name is used, and i
         assert(left[1] == "TheFishingLogTest3" and not inside.TheFishingLogTest3, "should leave the name it no longer needs")
         assert(#asked <= 2 and asked[#asked] == "TheFishingLogTest", "one ask per earlier name per half hour: " .. table.concat(asked, ","))
         assert(#said == 1, "moving back is not announced")
-        assert(box == nil)
+        assert(not dialog.shown)
     end)
     for _, n in ipairs(names) do _G[n] = saved[n] end
     assert(ok, err)
@@ -448,10 +451,11 @@ test("when every name is locked it stops asking, and no box is left up", functio
         local c = Client()
         c.db.settings.channel = true
         function c:Print() end
+        -- a client with no numbered frames: only StaticPopup_Visible and StaticPopup_Hide
         local asked, box = 0, nil
-        StaticPopup1 = {}
-        StaticPopup_Visible = function() if box then StaticPopup1.data = box return "StaticPopup1" end end
-        StaticPopup_Hide = function() box = nil end
+        StaticPopup1 = nil
+        StaticPopup_Visible = function() if box then return "SomePopup", { which = "CHAT_CHANNEL_PASSWORD", data = box } end end
+        StaticPopup_Hide = function(which) if which == "CHAT_CHANNEL_PASSWORD" then box = nil end end
         GetChannelName = function(name) return 0, name end
         JoinTemporaryChannel = function(name)
             asked = asked + 1
@@ -463,6 +467,42 @@ test("when every name is locked it stops asking, and no box is left up", functio
         assert(asked == 20, "asked " .. asked .. " times in two minutes; expected each of the 20 names once")
         assert(c.CHANNEL == "TheFishingLogTest20" and box == nil)
         assert(c.discoveryJoin.error == "every channel name is locked", tostring(c.discoveryJoin.error))
+    end)
+    for _, n in ipairs(names) do _G[n] = saved[n] end
+    assert(ok, err)
+end)
+
+test("the password box is closed as it opens, on a client that only has the dialog walker", function()
+    local names = { "GetChannelName", "StaticPopup_Visible", "StaticPopup_Hide", "StaticPopup1", "StaticPopup_Show", "StaticPopup_ForEachShownDialog", "hooksecurefunc" }
+    local saved = {}
+    for _, n in ipairs(names) do saved[n] = _G[n] end
+    local ok, err = pcall(function()
+        local dialogs = {}
+        local function open(name)
+            local d = { which = "CHAT_CHANNEL_PASSWORD", data = name, shown = true }
+            function d:IsShown() return self.shown end
+            function d:Hide() self.shown = false end
+            dialogs[#dialogs + 1] = d
+            return d
+        end
+        StaticPopup1, StaticPopup_Visible, StaticPopup_Hide = nil, nil, nil
+        StaticPopup_ForEachShownDialog = function(fn) for _, d in ipairs(dialogs) do if d.shown then fn(d) end end end
+        local shownFor
+        StaticPopup_Show = function(which, text) shownFor = open(text); shownFor.which = which; shownFor.data = nil; return shownFor end -- data is set by the caller, after
+        hooksecurefunc = function(name, post) local real = _G[name]; _G[name] = function(...) local r = real(...); post(...); return r end end
+        GetChannelName = function(name) return 0, name end
+        local c = Client()
+        function c:Print() end
+        assert(c.passwordBoxHook == true, "the show hook was not installed")
+        -- the game opens the box for one of our names: gone before the call returns
+        local d = StaticPopup_Show("CHAT_CHANNEL_PASSWORD", "TheFishingLogTest2")
+        assert(not d.shown and c.passwordBoxClosedBy == "dialog walker", "our box survived the hook")
+        -- for a channel of the player's own, and for any other popup: untouched
+        local mine = StaticPopup_Show("CHAT_CHANNEL_PASSWORD", "MyGuildChannel"); mine.data = "MyGuildChannel"
+        local other = StaticPopup_Show("CONFIRM_SOMETHING", "TheFishingLogTest")
+        assert(mine.shown and other.shown, "closed a box that was not ours")
+        c:ChannelLocked("TheFishingLogTest", "PASSWORD_REQUEST")
+        assert(mine.shown and other.shown and c.passwordBoxesClosed == 1)
     end)
     for _, n in ipairs(names) do _G[n] = saved[n] end
     assert(ok, err)

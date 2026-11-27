@@ -288,9 +288,9 @@ function MF:ChannelBaseTest(name)
     C_Timer.After(12, function()
         local id = JoinedNumber(self.CHANNEL)
         local box = type(StaticPopup_Visible) == "function" and StaticPopup_Visible("CHAT_CHANNEL_PASSWORD") and true or false
-        say(("ended up in %s (%s). Locked names met: %d. Password boxes closed: %d. Box on screen now: %s."):format(
+        say(("ended up in %s (%s). Locked names met: %d. Password boxes closed: %d (by %s). Box on screen now: %s."):format(
             tostring(self.CHANNEL), id and ("channel " .. id) or "not joined yet", (self.channelLocks or 0) - locksBefore,
-            (self.passwordBoxesClosed or 0) - boxesBefore, box and "YES" or "no"))
+            (self.passwordBoxesClosed or 0) - boxesBefore, tostring(self.passwordBoxClosedBy), box and "YES" or "no"))
     end)
 end
 
@@ -389,6 +389,10 @@ function MF:WorldProbeLines()
     Line("channel slots", "stated limit " .. tostring(MAX_WOW_CHAT_CHANNELS) .. " | joined now " .. tostring(ChannelsJoined())
         .. " | ours is " .. tostring(self.CHANNEL) .. ", number " .. tostring(JoinedNumber(self.CHANNEL or ""))
         .. " | locked names met " .. tostring(self.channelLocks or 0) .. " | password boxes closed " .. tostring(self.passwordBoxesClosed or 0))
+    Line("password box", "closed by " .. tostring(self.passwordBoxClosedBy) .. " | show hook " .. tostring(self.passwordBoxHook)
+        .. " | StaticPopup_Visible gave " .. tostring(self.passwordBoxSeenAs)
+        .. " | walker " .. type(StaticPopup_ForEachShownDialog) .. " | StaticPopup1 " .. type(StaticPopup1)
+        .. " | StaticPopup_Hide " .. type(StaticPopup_Hide))
     Line("builds", "mine " .. tostring(Mine()) .. " | heard this session: " .. self:BuildsHeardText())
     Line("region", Call("GetCurrentRegion") .. " | name " .. Call("GetCurrentRegionName"))
     Line("realm name", Call("GetRealmName") .. " | normalized " .. Call("GetNormalizedRealmName")

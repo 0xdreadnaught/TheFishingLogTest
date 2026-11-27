@@ -6,6 +6,16 @@ CurseForge. This build only sees anglers who run the test build.
 Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
 X-Build line in the toc and shows in the journal title and diagnostics.
 
+Build 21 - the password box is actually closed
+- Tested in game on build 20: the move to the next channel name worked, but
+  the game's password box stayed on screen until answered. Build 20 looked
+  for it in one way only.
+- The box is now closed the moment the game opens it (a hook that runs after
+  StaticPopup_Show, when the channel is one of ours), and looked for three
+  ways after a refusal: the numbered popup frames, the shown-dialog walker,
+  and StaticPopup_Visible. A box for a channel of your own is left alone.
+- /tfl clientdiag has a "password box" line saying which way worked.
+
 Build 20 - a locked channel no longer stops the addon finding people
 - Measured with build 19 on client 1.60.1: when the addon asks to join a
   channel that has a password, the client fires CHANNEL_PASSWORD_REQUEST and

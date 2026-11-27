@@ -314,26 +314,70 @@ local function ChannelIndex(name)
 end
 function MF:IsOurChannelName(name) return ChannelIndex(name) ~= nil end
 
--- The game's "enter the password for <channel>" box, if it is up for one of our names.
-local function HidePasswordBox(name)
-    if type(StaticPopup_Visible) ~= "function" or type(StaticPopup_Hide) ~= "function" then return false end
-    local a, b = StaticPopup_Visible("CHAT_CHANNEL_PASSWORD")
-    local frame = type(b) == "table" and b or type(a) == "table" and a or (type(a) == "string" and _G[a]) or nil
-    if not a then return false end
-    local data = type(frame) == "table" and frame.data or nil
-    if type(data) == "string" and not ChannelIndex(data) then return false end -- the player's own channel: theirs to answer
-    pcall(StaticPopup_Hide, "CHAT_CHANNEL_PASSWORD", data)
+-- The game's "enter the password for <channel>" box. Seen in game: it does appear when the
+-- addon's own join is refused, and it stays until the player answers it. Three ways to find
+-- it, because the popup code differs between clients: the numbered popup frames, the
+-- "each shown dialog" walker, and StaticPopup_Visible. A box asking about a channel that is
+-- not one of ours is the player's own and is left alone.
+local POPUP = "CHAT_CHANNEL_PASSWORD"
+local function Ours(dialog)
+    local data = type(dialog) == "table" and dialog.data or nil
+    return type(data) ~= "string" or ChannelIndex(data) ~= nil
+end
+local function CloseDialog(dialog, how)
+    if type(dialog) ~= "table" or dialog.which ~= POPUP or not Ours(dialog) then return false end
+    if type(dialog.IsShown) == "function" and not dialog:IsShown() then return false end
+    if not pcall(dialog.Hide, dialog) then return false end
     MF.passwordBoxesClosed = (MF.passwordBoxesClosed or 0) + 1
+    MF.passwordBoxClosedBy = how
     return true
+end
+local function HidePasswordBox()
+    local closed = false
+    for i = 1, 8 do
+        if CloseDialog(_G["StaticPopup" .. i], "numbered frame") then closed = true end
+    end
+    if type(StaticPopup_ForEachShownDialog) == "function" then
+        pcall(StaticPopup_ForEachShownDialog, function(dialog)
+            if CloseDialog(dialog, "dialog walker") then closed = true end
+        end)
+    end
+    if type(StaticPopup_Visible) == "function" then
+        local ok, a, b = pcall(StaticPopup_Visible, POPUP)
+        MF.passwordBoxSeenAs = ok and (type(a) .. "," .. type(b)) or "error"
+        local dialog = ok and (type(b) == "table" and b or type(a) == "table" and a or (type(a) == "string" and _G[a])) or nil
+        if type(dialog) == "table" and Ours(dialog) then
+            if CloseDialog(dialog, "StaticPopup_Visible") then closed = true
+            elseif type(StaticPopup_Hide) == "function" and (type(dialog.IsShown) ~= "function" or dialog:IsShown()) then
+                pcall(StaticPopup_Hide, POPUP)
+                MF.passwordBoxesClosed = (MF.passwordBoxesClosed or 0) + 1
+                MF.passwordBoxClosedBy = "StaticPopup_Hide"
+                closed = true
+            end
+        end
+    end
+    return closed
+end
+-- Close it the moment the game opens it, before a frame is drawn, when it is asking about one
+-- of our names. hooksecurefunc runs after the game's own function and does not alter it.
+local expectingBox = -math.huge
+if type(hooksecurefunc) == "function" and type(StaticPopup_Show) == "function" and not MF.inert then
+    MF.passwordBoxHook = pcall(hooksecurefunc, "StaticPopup_Show", function(which, channel)
+        if which ~= POPUP then return end
+        if ChannelIndex(channel) or GetTime() - expectingBox < 2 then HidePasswordBox() end
+    end)
 end
 
 function MF:ChannelLocked(name, why)
     local index = ChannelIndex(name)
     if not index then return end
     name = ChannelName(index)
-    -- The game's own handler for the same event may run after ours, so look again next frame.
-    HidePasswordBox(name)
-    if C_Timer and C_Timer.After then C_Timer.After(0, function() HidePasswordBox(name) end) end
+    -- The game's own handler for the same event may run after ours, or a little later.
+    expectingBox = GetTime()
+    HidePasswordBox()
+    if C_Timer and C_Timer.After then
+        for _, delay in ipairs({ 0, 0.2, 1 }) do C_Timer.After(delay, HidePasswordBox) end
+    end
     local key, now = name:lower(), GetTime()
     local fresh = not lockedAt[key] or now - lockedAt[key] > 5 -- the event and the notice arrive as a pair
     lockedAt[key] = now
