@@ -112,7 +112,7 @@ function MF:PrepareCardShare(id,road,target)
         target=tonumber(number)
         local id,name
         if target and target>=1 and target<=99 and type(GetChannelName)=="function" then id,name=GetChannelName(target) end
-        if id~=target or type(name)~="string" or name=="" or name:lower()=="thefishinglog" then
+        if id~=target or type(name)~="string" or name=="" or name:lower()==self.CHANNEL:lower() then
             self:Print("Enter the number of a joined chat channel, such as 1 for General or 2 for Trade.") return false
         end
     end

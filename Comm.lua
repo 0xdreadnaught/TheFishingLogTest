@@ -21,8 +21,10 @@
 --   Curve:    SKREQ SKUP (where skill comes up)         (Guide.lua)
 local _, MF = ...
 
-MF.PREFIX = "FishingLog"
-MF.CHANNEL = "TheFishingLog"
+-- Test build: its own message prefix and finder channel, so it only ever talks to
+-- other copies of this build. Upstream values: "FishingLog" and "TheFishingLog".
+MF.PREFIX = "FishingLogTest"
+MF.CHANNEL = "TheFishingLogTest"
 -- Forever rejects addon sends over custom channels.
 MF.CUSTOM_CHANNEL_SUPPORTED = false
 local SEP = "~"

@@ -1,4 +1,21 @@
-The Fishing Log (Test) - build 3
+The Fishing Log (Test) - based on The Fishing Log 1.1.4
+Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
+X-Build line in the toc and shows in the journal title and diagnostics.
+
+Build 4 - a network of its own
+- This build only talks to other copies of this build. It uses its own
+  addon-message prefix (FishingLogTest, and TFLUIFaceTest for podium faces)
+  and its own finder channel (TheFishingLogTest). Players on the original
+  addon neither see nor receive anything from it, and the reverse.
+- Save macros are named "TFL Test 1..4", so the original addon's account-wide
+  "TFL Save" macros are never read or overwritten.
+- The board's frenzy glow loads from this addon's own folder (it pointed at
+  the original addon's folder).
+- Card sharing refuses the finder channel by its current name.
+- Message formats, the launch-date envelope and all shared tables are
+  unchanged from 1.1.4.
+
+Build 3 - sync alerts and reports
 
 Sync alerts and reports:
 - One clickable start toast and ding per batch of overlapping exchanges.
@@ -19,7 +36,7 @@ Sync alerts and reports:
 Transport/report regression checks and mocked report-window checks pass.
 Live in-game display and player-to-player behavior still need confirmation.
 
-Record sync fixes from build 2:
+Build 2 - record sync fixes:
 - Whisper follow-ups return to the peer, including when guild/group routes
   are absent. The existing record tally also travels during whisper swaps.
 - Routine books relay a rotating slice of all known species records, including
@@ -41,7 +58,7 @@ database or guarantee identical lists. Other clients still limit what they
 send, disconnected peers cannot exchange data, and a full book can take
 several exchanges. The change is most effective when other senders adopt it.
 
-Character layout added in build 1:
+Build 1 - character layout:
 
 The journal now keeps your character on the left third of the window. The
 existing pages use the right two thirds, with all six bottom tabs preserved.
@@ -60,8 +77,9 @@ shared records; hover for that context. Angler title and purple XP progress
 appear below the character.
 
 Godfall's existing community theme, artwork, widgets, and MIT attribution are
-preserved. See LICENSE-UIRework.txt. This development build uses the existing
-saved data and remains dormant while the original TheFishingLog is enabled.
+preserved. See LICENSE-UIRework.txt. This test build keeps its own saved data (the
+game files it under the addon folder name) and remains dormant while the
+original TheFishingLog is enabled.
 
 Restart the client after installing this build to pick up the added Lua files.
 Enable The Fishing Log (Test) with the original The Fishing Log disabled.

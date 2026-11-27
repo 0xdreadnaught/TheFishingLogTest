@@ -1404,7 +1404,7 @@ MF:Command("history", "Progress", nil, function(self) self:ToggleJournal("histor
 MF:On("TFL_INIT", function(self)
     win = self:CreatePanel("TheFishingLogJournal", DEFAULT_W, DEFAULT_H,
         { strata = "DIALOG", movable = true, escCloses = true,
-          title = ("Angler's Journal  |cffa0a0a0v%s|r"):format(self:Version()),
+          title = ("Angler's Journal  |cffa0a0a0v%s|r"):format(self.VersionLabel()),
           close = true, fill = self.FILL_READING })
     win:SetPoint("CENTER")
     -- The stock background texture has transparent pixels even when its

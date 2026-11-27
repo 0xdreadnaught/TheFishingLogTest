@@ -260,7 +260,7 @@ ns.RealmFaces = { SetFace = SetFace, Remember = Remember, UnitOf = UnitOf }
 -- on the podium by whisper; we don't message strangers, but we still answer anyone who asks us,
 -- so the two stay compatible (same prefix). Off with ns.db.shareFace = false.
 -- ---------------------------------------------------------------------------
-local PREFIX = "TFLUIFace1"
+local PREFIX = "TFLUIFaceTest" -- upstream: "TFLUIFace1"
 shownFaces = setmetatable({}, { __mode = "k" }) -- face frame -> angler name on it
 local answered = {}
 local lastSend = 0

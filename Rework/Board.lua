@@ -27,7 +27,7 @@ local function FeedRows() return math.max(3, math.min(MAX_FEED, ns.db.feedRows o
 local FISHING_ICON = "Interface\\Icons\\Trade_Fishing"
 local CROWN = "|TInterface\\GroupFrame\\UI-Group-LeaderIcon:13:13|t "
 local STAR = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_1:12:12|t"
-local GLOW = "Interface\\AddOns\\TheFishingLog\\Media\\FrenzyGlow.tga"
+local GLOW = "Interface\\AddOns\\" .. TFL.ADDON .. "\\Media\\FrenzyGlow.tga"
 local MEDAL = { { 1, 0.82, 0 }, { 0.82, 0.82, 0.88 }, { 0.80, 0.50, 0.20 } }
 
 local function HexColor(code)

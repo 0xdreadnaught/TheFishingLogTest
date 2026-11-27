@@ -13,6 +13,12 @@ local function Version()
     return (get and get(MF.ADDON, "Version")) or "?"
 end
 MF.Version = Version
+-- The test build number from the toc (X-Build). Shown locally, never sent.
+function MF.VersionLabel()
+    local get = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+    local build = get and get(MF.ADDON, "X-Build")
+    return build and build ~= "" and (Version() .. " build " .. build) or Version()
+end
 
 local RECENT_CONTACT = 600
 local censusRequestedAt, censusPrintSerial = -math.huge, 0

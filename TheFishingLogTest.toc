@@ -4,7 +4,7 @@
 ## Notes: Location-based fishing: solo logs, live matches, spot records, bounties and an angler's journal.
 ## Author: Jake (new look based on Godfall's UI Rework, MIT)
 ## Version: 1.1.4
-## X-Build: 3
+## X-Build: 4
 ## SavedVariables: TheFishingLogDB, TheFishingLogDiscord, AnglersLodgeDB
 ## SavedVariablesPerCharacter: TheFishingLogChar
 ## IconTexture: Interface\Icons\Trade_Fishing

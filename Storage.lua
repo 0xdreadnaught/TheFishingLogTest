@@ -10,7 +10,7 @@ local _, MF = ...
 -- A dormant copy (Core.lua) leaves the running copy's dialogs alone.
 local POPUPS = MF.inert and {} or StaticPopupDialogs
 
-local MACRO_NAME = "TFL Save "
+local MACRO_NAME = "TFL Test " -- upstream: "TFL Save "
 local MAX_MACROS = 4
 local CHUNK = 230              -- data characters per macro (bodies max out at 255)
 local MACRO_ICON = 134400      -- question mark
@@ -270,7 +270,7 @@ function MF:SaveToMacros()
     if success then self.macroRetryAt = nil else self.macroRetryAt = GetTime() + 60 end
     if created and not self.db.macroNoticeShown then
         self.db.macroNoticeShown = true
-        self:Print("Your progress is now saved in account macros named |cffffd100TFL Save|r. "
+        self:Print("Your progress is now saved in account macros named |cffffd100TFL Test|r. "
             .. "Please don't delete them - they're how your rank and journal survive a relog.")
     end
 end
@@ -298,7 +298,7 @@ local function StandDown(self)
     if not self.db.settings.macroSave then return end
     self.db.settings.macroSave = false
     if MacroIndex(1) > 0 then
-        self:Print("Your progress saves normally now, so the |cffffd100TFL Save|r macros aren't "
+        self:Print("Your progress saves normally now, so the |cffffd100TFL Test|r macros aren't "
             .. "needed. |cffffd100/tfl macros clear|r deletes them, and |cffffd100/tfl macros load|r "
             .. "puts an old backup on this character if you ever want it.")
     end

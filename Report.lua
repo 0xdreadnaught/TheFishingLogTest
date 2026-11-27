@@ -8,7 +8,7 @@ local function print(...) MF:PrintChat(...) end
 
 -- Read-only live-client evidence, independent of any particular map build.
 function MF:ClientDiagnosticText()
-    local out={"TFL client diagnostics " .. self.Version()}
+    local out={"TFL client diagnostics " .. self.VersionLabel()}
     local function Probe(label,fn)
         local ok,value=pcall(fn)
         if ok and self:IsSecret(value) then value="restricted" end
