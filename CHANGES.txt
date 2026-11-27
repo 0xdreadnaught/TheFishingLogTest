@@ -6,6 +6,11 @@ CurseForge. This build only sees anglers who run the test build.
 Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
 X-Build line in the toc and shows in the journal title and diagnostics.
 
+Build 6 - world probe
+- /tfl clientdiag also lists what the game client reports about the region and
+  rule set this character is on. Read-only. It is there to find out how the
+  addon can tell the worlds apart; nothing uses the answer yet.
+
 Build 5 - says what it is
 - A chat line at login, the AddOns list tooltip and the README all state that
   this is a test build, not the main addon, and that it only sees other test

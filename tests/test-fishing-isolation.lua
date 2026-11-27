@@ -69,5 +69,39 @@ test("login shows the test-build notice with the build number", function()
     assert(said[1]:find("TEST BUILD 5", 1, true) and said[1]:find("not the main addon", 1, true), said[1])
 end)
 
+test("world probe reports what the client says and survives a client that says nothing", function()
+    local c = { listeners = {}, ADDON = "TheFishingLogTest", cdb = { realm = "Kept" } }
+    function c:On(event, fn) self.listeners[event] = self.listeners[event] or {}; table.insert(self.listeners[event], fn) end
+    function c:Print() end
+    function c:IsSecret() return false end
+    assert(loadfile(source .. "TestBuild.lua"))("TheFishingLogTest", c)
+    local function text() return table.concat(c:WorldProbeLines(), "\n") end
+
+    -- nothing defined: every line is still produced, none is a Lua error
+    local bare = text()
+    assert(bare:find("World region: absent | name absent", 1, true), bare)
+    assert(bare:find('kept "Kept"', 1, true), bare)
+    assert(not bare:find("attempt to", 1, true), bare)
+
+    GetCurrentRegion = function() return 1 end
+    GetCurrentRegionName = function() return "US" end
+    GetNormalizedRealmName = function() return "" end
+    UnitFullName = function() return "First Last", "Realm7" end
+    UnitGUID = function() return "Player-91-0ABCDEF0" end
+    Enum = { GameRule = { HardcoreRuleset = 1, PvpRuleset = 2 } }
+    C_GameRules = { IsGameRuleActive = function(id) return id == 2 end }
+    C_FakeThing = { GetRealmFlavor = function() end, Unrelated = function() end }
+    local full = text()
+    GetCurrentRegion, GetCurrentRegionName, GetNormalizedRealmName, UnitFullName, UnitGUID, Enum, C_GameRules, C_FakeThing =
+        nil, nil, nil, nil, nil, nil, nil, nil
+    assert(full:find('World region: 1 | name "US"', 1, true), full)
+    assert(full:find('normalized ""', 1, true), full)
+    assert(full:find('World player realm slot: "Realm7"', 1, true), full)
+    assert(full:find('World guid realm: "91"', 1, true), full)
+    assert(full:find("World active game rules: 1 of 2: PvpRuleset", 1, true), full)
+    assert(full:find("World C_FakeThing: GetRealmFlavor", 1, true), full)
+    assert(not full:find("First Last", 1, true) and not full:find("0ABCDEF0", 1, true), "probe must not print the character name or full GUID")
+end)
+
 if failures > 0 then error(failures .. " isolation check(s) failed") end
 print("All isolation checks passed")

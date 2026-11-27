@@ -19,6 +19,11 @@ function MF:ClientDiagnosticText()
         return ("%s build=%s interface=%s date=%s"):format(tostring(version),tostring(build),tostring(interface),tostring(stamp))
     end)
     Probe("Clock",function() return ("server=%s uptime=%.2f"):format(tostring(GetServerTime()),GetTime()) end)
+    if self.WorldProbeLines then
+        local ok,lines=pcall(self.WorldProbeLines,self)
+        if ok then for _,line in ipairs(lines) do out[#out+1]=line end
+        else out[#out+1]="World probe: ERROR " .. tostring(lines):sub(1,180) end
+    end
     Probe("Raw player map",function() return C_Map.GetBestMapForUnit("player") end)
     Probe("Raw zone",function() return GetRealZoneText() end)
     Probe("Raw subzone",function() return GetSubZoneText() end)
