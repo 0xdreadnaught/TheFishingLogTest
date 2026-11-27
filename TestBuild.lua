@@ -53,7 +53,8 @@ function MF:WorldProbeLines()
     Line("region", Call("GetCurrentRegion") .. " | name " .. Call("GetCurrentRegionName"))
     Line("realm name", Call("GetRealmName") .. " | normalized " .. Call("GetNormalizedRealmName")
         .. " | id " .. Call("GetRealmID") .. " | kept " .. Show(self.cdb and self.cdb.realm))
-    Line("player realm slot", Call(function() return (select(2, UnitFullName("player"))) end))
+    Line("native realm id", Call("GetNativeRealmID") .. " | selected realm " .. Call("SelectedRealmName")
+        .. " | unique names " .. Call("RegionalUniqueNamesEnabled") .. " | tournament " .. Call("IsOnTournamentRealm"))
     Line("guid realm", Call(function() return (tostring(UnitGUID("player")):match("^%a+%-(%d+)%-")) end))
     Line("connected realms", Call("GetAutoCompleteRealms"))
     Line("cvars", "portal " .. Call("GetCVar", "portal") .. " | realmName " .. Call("GetCVar", "realmName")
@@ -83,16 +84,65 @@ function MF:WorldProbeLines()
     else
         Line("active game rules", "no Enum.GameRule or no IsGameRuleActive")
     end
-    for _, name in ipairs({ "IsHardcoreActive", "GetActiveGameMode", "GetCurrentGameMode", "IsStandard" }) do
-        if type(C_GameRules) == "table" and C_GameRules[name] then Line("C_GameRules." .. name, Call(C_GameRules[name])) end
+    local GR = type(C_GameRules) == "table" and C_GameRules or {}
+    for _, name in ipairs({ "IsHardcoreActive", "IsStandard", "IsSelfFoundAllowed", "GetActiveGameMode",
+        "GetCurrentGameModeRecordID", "GetCurrentGameModeDisplayInfo", "GetForeverExperiencePreset",
+        "GetCurrentEventRealmQueues", "IsCharacterlessLoginActive" }) do
+        if GR[name] then Line("C_GameRules." .. name, Call(GR[name])) end
     end
+    if GR.GetNumDisplayedGameModes and GR.GetDisplayedGameModeRecordIDAtIndex then
+        local ok, n = pcall(GR.GetNumDisplayedGameModes)
+        n = ok and tonumber(n) or 0
+        Line("displayed game modes", tostring(n))
+        for i = 1, math.min(n, 10) do
+            local okID, id = pcall(GR.GetDisplayedGameModeRecordIDAtIndex, i)
+            Line("game mode " .. i, "record " .. Show(okID and id or "ERROR")
+                .. " | info " .. Call(GR.GetGameModeDisplayInfoByRecordID, okID and id or nil)
+                .. " | glue name " .. Call(GR.GetGameModeGlueScreenName, okID and id or nil)
+                .. " | enabled " .. Call(GR.IsGameModeEnabled, okID and id or nil))
+        end
+    end
+    if type(Enum) == "table" then
+        Line("Enum.GameMode", Show(Enum.GameMode))
+        Line("Enum.EventRealmQueues", Show(Enum.EventRealmQueues))
+        Line("Enum.ChatChannelRuleset", Show(Enum.ChatChannelRuleset))
+    end
+    if type(rules) == "table" then
+        local names, values = {}, {}
+        for name, id in pairs(rules) do
+            names[#names + 1] = tostring(name)
+            if GR.IsGameRuleActive and GR.GetGameRuleAsFloat then
+                local okA, on = pcall(GR.IsGameRuleActive, id)
+                local okV, v = pcall(GR.GetGameRuleAsFloat, id)
+                if okA and on and okV then values[#values + 1] = tostring(name) .. "=" .. tostring(v) end
+            end
+        end
+        table.sort(names) table.sort(values)
+        Line("active rule values", table.concat(values, " "))
+        Line("all game rules", table.concat(names, " "))
+    end
+
+    -- Is the finder channel one per world, or shared across the region?
+    local CI = type(C_ChatInfo) == "table" and C_ChatInfo or {}
+    local function Channel(label, name)
+        local ok, id = pcall(GetChannelName, name)
+        id = ok and tonumber(id) or 0
+        Line("channel " .. label, "id " .. tostring(id)
+            .. " | ruleset " .. Call(CI.GetChannelRulesetForChannelID, id)
+            .. " | regional " .. Call(CI.IsChannelRegionalForChannelID, id))
+    end
+    if type(GetChannelName) == "function" then
+        Channel("finder", self.CHANNEL or "TheFishingLogTest")
+        Channel("1", 1)
+    end
+    Line("regional chat service", Call(CI.IsRegionalServiceAvailable))
     Line("C_Seasons", Members("C_Seasons"))
     if type(C_Seasons) == "table" then
         Line("season", "has " .. Call(C_Seasons.HasActiveSeason) .. " | active " .. Call(C_Seasons.GetActiveSeason))
     end
 
     -- Anything else the client names after these ideas: globals, C_ namespaces, enums.
-    local words = { "realm", "region", "gamerule", "ruleset", "gamemode", "hardcore", "roleplay", "season" }
+    local words = { "realm", "region", "gamerule", "ruleset", "gamemode", "hardcore", "roleplay", "district", "preset" }
     local function Matches(key)
         if type(key) ~= "string" then return false end
         local lower = key:lower()
