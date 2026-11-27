@@ -1,5 +1,5 @@
 -- Frenzies: every frenzy water, searchable, and the next two hours of them.
---   top      a search box (water or zone), Active now / Next hour / All, Favourites, List / Timeline
+--   top      a search box (water or zone), Active / Next hour / All, Favourites, List / Timeline
 --   strip    how many are on, and the next frenzy where you are, with Remind me
 --   list     waters under their zones (yours first), one line each: a bar for how long it has left or
 --            how soon it starts, how far away it is in your zone, a star for favourites. A click opens
@@ -445,7 +445,7 @@ function P:Build(frame)
     end, "Search waters or zones")
     self.search:SetPoint("LEFT", 6, 0)
 
-    self.when = Segments(bar, { { "active", "Active now" }, { "hour", "Next hour" }, { "all", "All", 60 } },
+    self.when = Segments(bar, { { "active", "Active" }, { "hour", "Next hour" }, { "all", "All", 60 } },
         function() return Prefs().when end, function(v) Prefs().when = v end)
     self.when[1]:SetPoint("LEFT", self.search, "RIGHT", 16, 0)
 
@@ -513,7 +513,7 @@ function P:LayoutBar()
     local width = bar:GetWidth() or 0
     if width <= 0 then return end
     local full = width >= FULL_BAR_W
-    local whenW = full and { 90, 90, 60 } or { 84, 80, 40 }
+    local whenW = full and { 70, 90, 60 } or { 58, 80, 40 }
     local viewW = full and { 70, 90 } or { 46, 76 }
     local gap = full and 14 or 8
     local label = self.favs.text
@@ -521,6 +521,12 @@ function P:LayoutBar()
     local fixed = 6 + gap + (whenW[1] + 2 + whenW[2] + 2 + whenW[3]) + gap + favW + gap + (viewW[1] + 2 + viewW[2]) + 6
     local searchW = math.max(90, math.min(230, width - fixed))
     self.search:SetWidth(searchW)
+    -- The hint in the empty box wrapped onto a second line when the box was narrow.
+    local hint = self.search.Instructions
+    if type(hint) == "table" and hint.SetText then
+        if hint.SetWordWrap then hint:SetWordWrap(false) end
+        hint:SetText(searchW >= 190 and "Search waters or zones" or "Search waters")
+    end
     for i, b in ipairs(self.when) do b:SetWidth(whenW[i]) end
     for i, b in ipairs(self.view) do b:SetWidth(viewW[i]) end
     self.when[1]:ClearAllPoints()

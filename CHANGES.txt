@@ -6,6 +6,16 @@ CurseForge. This build only sees anglers who run the test build.
 Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
 X-Build line in the toc and shows in the journal title and diagnostics.
 
+Build 14 - page count centred; Frenzies filter row
+- The count at the foot of every page ("12 entries", "0 anglers entered",
+  "3 waters") was in the bottom right corner, under the window's corner
+  piece. It is now centred under the page, halfway between the character
+  panel and the window's right edge. One label serves every page
+  (J:PlaceCount in Rework/Journal.lua).
+- Frenzies: the "Active now" filter reads "Active", and the room that frees
+  goes to the search box. The hint in the empty box no longer wraps onto two
+  lines; in a narrow box it reads "Search waters".
+
 Build 13 - Frenzies page: strip and filter row
 - The strip under the filters had two texts anchored to opposite ends with no
   width, so in the narrower page they were drawn over each other, and the

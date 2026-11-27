@@ -504,6 +504,28 @@ function J:LayoutWorkspace()
     self:PlaceHeading()
 end
 
+-- The count at the foot of every page ("12 entries", "0 anglers entered") is centred under the
+-- page: halfway between the character panel and the window's right edge. If the page's own
+-- buttons at the bottom left reach that far, it is centred in the room to their right.
+function J:PlaceCount()
+    local count, footer = self.count, f and f.footer
+    if not (count and footer) then return end
+    local width = footer:GetWidth() or 0
+    local text = count:GetStringWidth() or 0
+    local buttons = 0
+    for _, b in ipairs(f.actions or {}) do
+        if b:IsShown() then buttons = buttons + (buttons > 0 and 6 or 0) + (b:GetWidth() or 0) end
+    end
+    local x = 0
+    if buttons > 0 and width > 0 and (width - text) / 2 < buttons + 12 then
+        x = math.floor((buttons + 12) / 2) -- centre of what is left, measured from the footer's centre
+    end
+    if x == count.offsetX then return end
+    count.offsetX = x
+    count:ClearAllPoints()
+    count:SetPoint("BOTTOM", footer, "BOTTOM", x, 6)
+end
+
 -- The page heading and the small note beside it read as one line, centred under the window
 -- title. The title sits in the bar between the portrait and the close button, which is the
 -- strip the drag handle covers, so that is what the heading is centred on.
@@ -656,9 +678,15 @@ function J:Build()
         b:Hide()
         f.actions[i] = b
     end
+    -- Test build: the count sat in the bottom right corner, under the window's corner piece.
+    -- It is centred under the page instead (see PlaceCount), whichever page sets it.
     self.count = W:Label(footer, "GameFontDisableSmall")
-    self.count:SetPoint("BOTTOMRIGHT", -4, 6)
+    self.count:SetWordWrap(false)
+    self.count:SetPoint("BOTTOM", 0, 6)
     f.footer = footer
+    local setCount = self.count.SetText
+    self.count.SetText = function(fs, ...) setCount(fs, ...) J:PlaceCount() end
+    footer:HookScript("OnSizeChanged", function() J:PlaceCount() end)
 
     -- The list
     local list = BuildList(body)
@@ -1010,6 +1038,7 @@ function J:SetAction(b, label, fn)
     b:SetText(label)
     b:SetWidth(math.max(90, (b:GetFontString() and b:GetFontString():GetStringWidth() or 60) + 28))
     b:Show()
+    J:PlaceCount()
 end
 
 -- ---------------------------------------------------------------------------

@@ -298,6 +298,20 @@ for _,width in ipairs({563,600,728,880,1080}) do
     assert(used<=width,("filter row needs %d of %d"):format(used,width))
     assert(FP.search:GetWidth()>=90 and FP.search:GetWidth()<=230)
 end
-FP.bar:SetSize(1080,26);FP:LayoutBar();assert(FP.when[1]:GetWidth()==90 and FP.search:GetWidth()==230,"full width keeps the original sizes")
-print("PASS: frenzy strip wording and slots; filter row fits its page")
+FP.bar:SetSize(1080,26);FP:LayoutBar();assert(FP.when[1]:GetWidth()==70 and FP.when[2]:GetWidth()==90 and FP.search:GetWidth()==230)
+assert(FP.when[1]:GetText()=="Active","the first filter reads Active")
+FP.bar:SetSize(563,26);FP:LayoutBar()
+assert(FP.when[1]:GetWidth()==58 and FP.search:GetWidth()>=130,"the shorter button's room goes to the search box, got "..FP.search:GetWidth())
+
+-- The count at the foot of the page is centred under the page, clear of the corner.
+local count,footer=J.count,win.footer
+footer:SetSize(560,14)
+count:SetText("0 anglers entered")
+assert(#count.points==1 and count.points[1][1]=="BOTTOM" and count.points[1][2]==footer and count.points[1][4]==0)
+-- a page with buttons at the bottom left that reach the middle: centred in what is left
+J:SetAction(win.actions[1],"Share",function() end);J:SetAction(win.actions[2],"Export",function() end)
+win.actions[1]:SetWidth(120);win.actions[2]:SetWidth(120);count:SetText("12 entries")
+assert(count.points[1][4]==math.floor((246+12)/2),"moves right of the buttons, got "..tostring(count.points[1][4]))
+win.actions[1]:Hide();win.actions[2]:Hide();count:SetText("3 waters");assert(count.points[1][4]==0)
+print("PASS: frenzy strip wording and slots; filter row fits its page; page count centred")
 print("PASS: fishing outfit preservation, weapon slots, delayed models, refresh events, rank/XP, camera, and journal integration")
