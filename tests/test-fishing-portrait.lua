@@ -110,7 +110,17 @@ local function update(seconds) now=now+seconds;panel.scripts.OnUpdate(panel,seco
 panel:Show();update(0.2)
 assert(panel.model.equipment[1]=="hat" and panel.model.equipment[5]=="current chest")
 assert(panel.model.equipment[16]=="pole" and panel.model.equipment[17]==nil,"pole must replace both hands in the preview")
-assert(panel.caption:GetText()=="Fishing outfit" and panel.realm:GetText()=="Realm #1")
+assert(panel.caption:GetText()=="Fishing outfit")
+-- no world known: the heading falls back to "Realm"; the place sits on the line below
+assert(panel.realm:GetText()=="Realm" and panel.realmNote:GetText()=="#1 of 334 anglers · All time",panel.realm:GetText().." / "..panel.realmNote:GetText())
+-- world known: the heading is the detected region and rule set
+MF.worldKey="US-PvP";function MF:WorldLabel() return "Americas & Oceania, PvP" end
+panel:RefreshRank()
+assert(panel.realm:GetText()=="Americas & Oceania, PvP" and panel.realmNote:GetText()=="#1 of 334 anglers · All time")
+MF.unranked=true;panel:RefreshRank()
+assert(panel.realm:GetText()=="Americas & Oceania, PvP" and panel.realmNote:GetText()=="No records here yet")
+MF.worldKey="?";panel:RefreshRank();assert(panel.realm:GetText()=="Realm")
+MF.unranked=nil;MF.worldKey="US-PvP";panel:RefreshRank()
 assert(panel.xp.bar.value==5512 and panel.xp.bar.range[2]==9000)
 assert(panel.xp.text:GetText()=="15512 / 19000 XP")
 local tries, units=0,0
@@ -137,7 +147,7 @@ update(1);update(0.2)
 assert(panel.caption:GetText()=="Current gear" and panel.model.equipment[17]=="current shield")
 assert(MF.cdb.gear.outfit==nil)
 MF.unranked=true;MF.cdb.profile.xp=15600;update(1)
-assert(panel.realm:GetText()=="Realm —" and panel.realmNote:GetText()=="No realm records yet")
+assert(panel.realm:GetText()=="Americas & Oceania, PvP" and panel.realmNote:GetText()=="No records here yet")
 assert(panel.xp.bar.value==5600,"progress refreshes independently of page content")
 -- Deferred geometry waits, then times out rather than repeatedly dressing/loading.
 panel.model.ready=false;panel:RefreshModel();local count=#panel.model.calls

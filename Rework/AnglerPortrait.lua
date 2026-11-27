@@ -74,6 +74,7 @@ function Portrait:Create(parent)
     panel.realm:SetPoint("TOPLEFT", 12, -15)
     panel.realm:SetPoint("TOPRIGHT", -12, -15)
     panel.realm:SetJustifyH("CENTER")
+    panel.realm:SetWordWrap(false)
     panel.realmNote = W:Label(overlay, "GameFontDisableSmall", "All time")
     panel.realmNote:SetPoint("TOPLEFT", 12, -39)
     panel.realmNote:SetPoint("TOPRIGHT", -12, -39)
@@ -83,7 +84,7 @@ function Portrait:Create(parent)
     rankTip:SetPoint("TOPRIGHT", -8, -8)
     rankTip:SetHeight(45)
     rankTip:EnableMouse(true)
-    W:Tip(rankTip, "Realm ranking", "All-time record standings known to your addon, matching the Realm tab. Shared records can change your place.")
+    W:Tip(rankTip, "Your ranking", "The region and rule set this character is on, and your place in its all-time record standings as known to your addon, matching the Realm tab. Shared records can change your place.")
 
     panel.character = W:Label(overlay, "GameFontNormal", "")
     panel.character:SetPoint("BOTTOMLEFT", 10, 112)
@@ -164,8 +165,14 @@ function Portrait:Create(parent)
         self.character:SetText(MF.me and MF:ShortName(MF.me) or "")
         local place, total
         if MF.RealmRank and MF.me then place, total = MF:RealmRank(MF.me) end
-        self.realm:SetText(place and ("Realm #%d"):format(place) or "Realm —")
-        self.realmNote:SetText(place and ("of %d anglers · All time"):format(total or place) or "No realm records yet")
+        -- The heading is the world the game says this character is on (World.lua), e.g.
+        -- "Americas & Oceania, PvP"; the place in it goes on the line below.
+        local known = MF.WorldLabel and MF.worldKey and MF.worldKey ~= "?"
+        self.realm:SetFontObject("GameFontNormalLarge")
+        self.realm:SetText(known and MF:WorldLabel() or "Realm")
+        local room = self.realm.GetWidth and self.realm:GetWidth() or 0
+        if room > 0 and self.realm:GetStringWidth() > room then self.realm:SetFontObject("GameFontNormal") end
+        self.realmNote:SetText(place and ("#%d of %d anglers · All time"):format(place, total or place) or "No records here yet")
         local xp = MF.cdb and MF.cdb.profile and MF.cdb.profile.xp or 0
         local idx, name, nextXP = MF:RankFor(xp)
         self.rank:SetText(name or "")

@@ -6,6 +6,11 @@ CurseForge. This build only sees anglers who run the test build.
 Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
 X-Build line in the toc and shows in the journal title and diagnostics.
 
+Build 9 - the character panel names the world
+- The heading above the character used to read "Realm #1". It now shows the
+  detected region and rule set, for example "Americas & Oceania, PvP", with
+  your place on the line below ("#1 of 334 anglers - All time").
+
 Build 8 - one world at a time
 - The addon now knows which region and rule set the character is on (for
   example "Americas & Oceania, PvP"). The game says so through
