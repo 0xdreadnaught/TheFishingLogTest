@@ -1,10 +1,10 @@
 ## Interface: 16001
 ## Title: The Fishing Log (Test)
 ## Category: Professions
-## Notes: Location-based fishing: solo logs, live matches, spot records, bounties and an angler's journal.
+## Notes: TEST BUILD of The Fishing Log, not the main addon. It only sees anglers who run the test build. Disable the original while this is enabled.
 ## Author: Jake (new look based on Godfall's UI Rework, MIT)
 ## Version: 1.1.4
-## X-Build: 4
+## X-Build: 5
 ## SavedVariables: TheFishingLogDB, TheFishingLogDiscord, AnglersLodgeDB
 ## SavedVariablesPerCharacter: TheFishingLogChar
 ## IconTexture: Interface\Icons\Trade_Fishing
@@ -25,6 +25,7 @@ Spots.lua
 Comm.lua
 SyncLog.lua
 Compat.lua
+TestBuild.lua
 
 # Features. TFL_CATCH listeners run in this order: Profile, Session, Match.
 Catch.lua

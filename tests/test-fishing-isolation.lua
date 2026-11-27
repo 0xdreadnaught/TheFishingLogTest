@@ -48,5 +48,26 @@ test("everything sent goes out on our prefix only", function()
     for _, m in ipairs(wire) do assert(m.prefix == c.PREFIX, "sent on " .. tostring(m.prefix)) end
 end)
 
+test("login shows the test-build notice with the build number", function()
+    -- Only TestBuild.lua, on a bare stand-in for the addon table.
+    local c, said = { listeners = {}, ADDON = "TheFishingLogTest" }, {}
+    function c:On(event, fn) self.listeners[event] = self.listeners[event] or {}; table.insert(self.listeners[event], fn) end
+    function c:Print(msg) said[#said + 1] = msg end
+    local timer, meta = C_Timer, GetAddOnMetadata
+    local waited
+    C_Timer = { After = function(seconds, fn) waited = seconds; fn() end }
+    GetAddOnMetadata = function(addon, field) return addon == "TheFishingLogTest" and field == "X-Build" and "5" or nil end
+    local ok, err = pcall(function()
+        assert(loadfile(source .. "TestBuild.lua"))("TheFishingLogTest", c)
+        assert(#c.listeners.TFL_LOGIN == 1, "no login listener")
+        c.listeners.TFL_LOGIN[1](c)
+    end)
+    C_Timer, GetAddOnMetadata = timer, meta
+    assert(ok, err)
+    assert(waited and waited > 0, "notice should wait for the login chatter to pass")
+    assert(#said == 1, "expected one notice, got " .. #said)
+    assert(said[1]:find("TEST BUILD 5", 1, true) and said[1]:find("not the main addon", 1, true), said[1])
+end)
+
 if failures > 0 then error(failures .. " isolation check(s) failed") end
 print("All isolation checks passed")

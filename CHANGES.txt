@@ -1,6 +1,15 @@
 The Fishing Log (Test) - based on The Fishing Log 1.1.4
+
+THIS IS A TEST BUILD, NOT THE MAIN ADDON. The main addon is The Fishing Log on
+CurseForge. This build only sees anglers who run the test build.
+
 Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
 X-Build line in the toc and shows in the journal title and diagnostics.
+
+Build 5 - says what it is
+- A chat line at login, the AddOns list tooltip and the README all state that
+  this is a test build, not the main addon, and that it only sees other test
+  builds. The login line lives in TestBuild.lua.
 
 Build 4 - a network of its own
 - This build only talks to other copies of this build. It uses its own
