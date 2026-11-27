@@ -296,6 +296,62 @@ test("/tfl channeltest rate sends 45 messages, counts accepted, throttled and re
     assert(ok, err)
 end)
 
+test("/tfl channeltest join asks for one of our channels and records how the client says it is locked", function()
+    local names = { "CreateFrame", "GetChannelName", "C_Timer", "JoinTemporaryChannel", "LeaveChannelByName", "StaticPopup_Visible", "GetChannelList" }
+    local saved = {}
+    for _, n in ipairs(names) do saved[n] = _G[n] end
+    local ok, err = pcall(function()
+        local timers, frames, asked, left = {}, {}, {}, {}
+        C_Timer = { After = function(_, fn) timers[#timers + 1] = fn end }
+        local function settle() for _ = 1, 50 do if #timers == 0 then return end local fn = table.remove(timers, 1); fn() end end
+        CreateFrame = function()
+            local f = { events = {} }
+            function f:RegisterEvent(e) if e == "NO_SUCH_EVENT" then error("unknown event") end self.events[e] = true end
+            function f:SetScript(_, fn) self.handler = fn end
+            frames[#frames + 1] = f
+            return f
+        end
+        local function fire(event, ...) for _, f in ipairs(frames) do if f.events[event] and f.handler then f.handler(f, event, ...) end end end
+        local inside = {}
+        GetChannelName = function(name) return inside[name] or 0 end
+        GetChannelList = function() return end
+        local popup = false
+        StaticPopup_Visible = function(which) return which == "CHAT_CHANNEL_PASSWORD" and popup and "StaticPopup1" or nil end
+        JoinTemporaryChannel = function(name)
+            asked[#asked + 1] = name
+            if name == "TFLLockTest" then popup = true; fire("CHANNEL_PASSWORD_REQUEST", name); fire("CHAT_MSG_CHANNEL_NOTICE", "WRONG_PASSWORD", "", "", "TFLLockTest", "", "", 0, 0, "TFLLockTest")
+            else inside[name] = 7; fire("CHAT_MSG_CHANNEL_NOTICE", "YOU_JOINED", "", "", "7. " .. name, "", "", 0, 7, name) end
+        end
+        LeaveChannelByName = function(name) left[#left + 1] = name; inside[name] = nil end
+        local c, said, commands = { listeners = {}, ADDON = "TheFishingLogTest", PREFIX = "FishingLogTest", CHANNEL = "TheFishingLogTest" }, {}, {}
+        function c:On() end
+        function c:Print(msg) said[#said + 1] = msg end
+        function c:IsSecret() return false end
+        function c:Command(name, _, _, fn) commands[name] = fn end
+        assert(loadfile(source .. "TestBuild.lua"))("TheFishingLogTest", c)
+        local function try(rest) said = {}; commands.channeltest(c, { "join" }, rest); settle(); return table.concat(said, " | ") end
+        -- only our own channel names can be asked for
+        for _, bad in ipairs({ "join", "join Trade", "join General", "join TFL Lock", "join TFL-x" }) do
+            local n = #asked; assert(try(bad):find("starting with TFL", 1, true) or #asked > n and false, bad)
+            assert(#asked == n, "asked to join for: " .. bad)
+        end
+        local text = try("join TFLLockTest")
+        assert(#asked == 1 and text:find("did not get in. Password box on screen: yes", 1, true), text)
+        popup = false
+        text = try("join TFLOpenTest")
+        assert(text:find("got in, as channel 7", 1, true) and text:find("Password box on screen: no", 1, true), text)
+        assert(left[1] == "TFLOpenTest", "should leave a channel it got into")
+        -- someone else's channel being locked is none of our business
+        fire("CHANNEL_PASSWORD_REQUEST", "SomeGuildChannel")
+        fire("CHAT_MSG_CHANNEL_NOTICE", "BANNED", "", "", "4. TheFishingLogTest", "", "", 0, 4, "TheFishingLogTest")
+        local line
+        for _, l in ipairs(c:WorldProbeLines()) do if l:find("lock signals", 1, true) then line = l end end
+        assert(line == "World lock signals: password-request event exists | seen: PASSWORD_REQUEST event TFLLockTest; WRONG_PASSWORD notice TFLLockTest; BANNED notice TheFishingLogTest", tostring(line))
+    end)
+    for _, n in ipairs(names) do _G[n] = saved[n] end
+    assert(ok, err)
+end)
+
 test("world probe reports what the client says and survives a client that says nothing", function()
     local c = { listeners = {}, ADDON = "TheFishingLogTest", cdb = { realm = "Kept" } }
     function c:On(event, fn) self.listeners[event] = self.listeners[event] or {}; table.insert(self.listeners[event], fn) end

@@ -220,13 +220,62 @@ function MF:ChannelRateTest()
     end)
 end
 
+
+-- What does the game tell an addon when a channel it wants is locked with a password, or it
+-- has been banned? Everything the client says about our channels (names starting "TFL", and
+-- the finder channel) is kept for /tfl clientdiag. /tfl channeltest join NAME makes the addon
+-- itself ask to join, the way it would at login, so the answer can be seen; it leaves again
+-- after 10 seconds if it got in.
+local lockSignals, lockEvent = {}, false
+local function OurChannel(name)
+    if type(name) ~= "string" then return false end
+    name = name:gsub("^%d+%.%s*", "")
+    return name:find("^TFL") ~= nil or name:lower() == tostring(MF.CHANNEL):lower()
+end
+local function NoteLockSignal(text)
+    lockSignals[#lockSignals + 1] = text
+    if #lockSignals > 8 then table.remove(lockSignals, 1) end
+end
+do
+    local f = CreateFrame and CreateFrame("Frame")
+    if f and f.RegisterEvent then
+        lockEvent = pcall(f.RegisterEvent, f, "CHANNEL_PASSWORD_REQUEST") -- an unknown event name raises an error
+        pcall(f.RegisterEvent, f, "CHAT_MSG_CHANNEL_NOTICE")
+        f:SetScript("OnEvent", function(_, event, first, _, _, prefixed, _, _, _, _, base)
+            if event == "CHANNEL_PASSWORD_REQUEST" then
+                if OurChannel(first) then NoteLockSignal("PASSWORD_REQUEST event " .. first) end
+            elseif first ~= "YOU_JOINED" and first ~= "YOU_LEFT" and first ~= "YOU_CHANGED" then
+                local name = type(base) == "string" and base ~= "" and base or prefixed
+                if OurChannel(name) then NoteLockSignal(tostring(first) .. " notice " .. tostring(name):gsub("^%d+%.%s*", "")) end
+            end
+        end)
+    end
+end
+function MF:ChannelJoinTest(name)
+    local say = function(text) self:Print("Channel join: " .. text) end
+    if type(name) ~= "string" or not name:find("^TFL[%w]+$") or #name > 30 then
+        return say("give a channel name starting with TFL, letters and digits only. Example: /tfl channeltest join TFLLockTest")
+    end
+    if type(JoinTemporaryChannel) ~= "function" or not (C_Timer and C_Timer.After) then return say("this client has no way to try.") end
+    local ok = pcall(JoinTemporaryChannel, name)
+    say("asked to join " .. name .. (ok and "." or ", and the client raised an error.") .. " Watch for a password box.")
+    C_Timer.After(4, function()
+        local id = JoinedNumber(name)
+        local box = type(StaticPopup_Visible) == "function" and StaticPopup_Visible("CHAT_CHANNEL_PASSWORD") and true or false
+        say((id and ("got in, as channel " .. id .. ". Leaving it again shortly.") or "did not get in.")
+            .. " Password box on screen: " .. (box and "yes" or "no") .. ". Now paste the 'lock signals' line from /tfl clientdiag.")
+        if id and type(LeaveChannelByName) == "function" then C_Timer.After(6, function() pcall(LeaveChannelByName, name) end) end
+    end)
+end
+
 if MF.Command then
     MF:Command("channeltest", "Other",
-        "/tfl channeltest - test build: can addon messages use the finder channel? (also: slots, rate)",
-        function(self, args)
+        "/tfl channeltest - test build: can addon messages use the finder channel? (also: slots, rate, join NAME)",
+        function(self, args, rest)
             local what = args and args[1]
             if what == "slots" then self:ChannelSlotTest()
             elseif what == "rate" then self:ChannelRateTest()
+            elseif what == "join" then self:ChannelJoinTest(type(rest) == "string" and rest:match("^%S+%s+(%S+)") or nil)
             else self:ChannelSendTest() end
         end)
 end
@@ -307,6 +356,8 @@ function MF:WorldProbeLines()
         .. " | other-world messages dropped " .. tostring(self.otherWorldsHeard or 0))
     Line("channel test heard", tostring(self.channelTestsHeard or 0) .. " from other players this session"
         .. " | last rate test heard: " .. (self.rateTestHeard and (self.rateTestHeard.n .. " of " .. tostring(self.rateTestHeard.total)) or "none"))
+    Line("lock signals", "password-request event " .. (lockEvent and "exists" or "absent") .. " | seen: "
+        .. (#lockSignals > 0 and table.concat(lockSignals, "; ") or "none"))
     Line("channel slots", "stated limit " .. tostring(MAX_WOW_CHAT_CHANNELS) .. " | joined now " .. tostring(ChannelsJoined())
         .. " | ours is number " .. tostring(JoinedNumber(self.CHANNEL or "")))
     Line("builds", "mine " .. tostring(Mine()) .. " | heard this session: " .. self:BuildsHeardText())
