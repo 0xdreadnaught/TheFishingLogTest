@@ -16,6 +16,7 @@ Based on 1.1.4. The full notes are in [CHANGES.txt](CHANGES.txt).
 - Its own message prefix and channel, which is why it can't see the main addon.
 - It knows which region and rule set your character is on, and keeps each one's records, bounties and events apart. Messages from another region or rule set are ignored.
 - The logbook only lists a water for a session if you caught a fish there. The original also lists every water you passed through, with 0 fish.
+- If someone locks the channel the addon uses to find other anglers, it closes the password box the game puts up and moves to a spare channel. The original keeps retrying and the box keeps coming back.
 - A chat message at login saying it's the test build, and another if someone you sync with is on a newer build than you.
 
 ## Install

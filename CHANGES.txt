@@ -6,6 +6,23 @@ CurseForge. This build only sees anglers who run the test build.
 Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
 X-Build line in the toc and shows in the journal title and diagnostics.
 
+Build 20 - a locked channel no longer stops the addon finding people
+- Measured with build 19 on client 1.60.1: when the addon asks to join a
+  channel that has a password, the client fires CHANNEL_PASSWORD_REQUEST and
+  then a WRONG_PASSWORD notice, and the game shows a password box. A player
+  can be in 20 channels at once.
+- DIFFERS FROM THE ORIGINAL: when the finder channel is locked (password) or
+  we are banned from it, the addon closes the password box if it is for one
+  of its own channels, stops asking for that name, and uses the next one:
+  TheFishingLogTest2, 3, ... up to 20. Every copy walks the same list from
+  the start at each login, so everyone meets in the lowest open name. From a
+  later name it asks for the earlier ones again every 30 minutes and moves
+  back when one opens. One chat line says so the first time. In 1.1.4 the
+  join is retried on the same name and the box comes back each time.
+  Code: "A locked channel" in Comm.lua.
+- /tfl channeltest base NAME runs that against a stand-in name for the
+  session, so it can be tried without locking the real channel.
+
 Build 19 - what a locked channel looks like to the addon
 - /tfl channeltest join NAME has the addon itself ask to join a channel
   (names starting with TFL only), says whether it got in and whether a

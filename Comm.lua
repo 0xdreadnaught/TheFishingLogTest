@@ -25,6 +25,7 @@ local _, MF = ...
 -- other copies of this build. Upstream values: "FishingLog" and "TheFishingLog".
 MF.PREFIX = "FishingLogTest"
 MF.CHANNEL = "TheFishingLogTest"
+MF.CHANNEL_BASE = MF.CHANNEL -- MF.CHANNEL moves to CHANNEL_BASE .. 2, 3, ... while a name is locked (see "A locked channel")
 -- Forever rejects addon sends over custom channels.
 MF.CUSTOM_CHANNEL_SUPPORTED = false
 local SEP = "~"
@@ -206,7 +207,10 @@ end
 MF.ChannelSlots=function() return ChannelSlots() end
 function MF:DiscoveryJoinStatus()
     if not self.db.settings.channel then return "Automatic discovery is disabled in Options > Data." end
-    if JoinedID(self) then return "Discovery channel joined." end
+    if JoinedID(self) then
+        return self.CHANNEL == self.CHANNEL_BASE and "Discovery channel joined."
+            or ("Discovery channel joined: " .. self.CHANNEL .. " (the usual one is locked).")
+    end
     local state=DiscoveryState(self)
     local now=GetTime()
     if now<state.readyAt then return ("Discovery channel join starts in %d seconds."):format(math.ceil(state.readyAt-now)) end
@@ -276,6 +280,131 @@ MF:OnTick(function(self)
     if GetTime()<discoveryCheckAt then return end
     discoveryCheckAt=GetTime()+5
     self:EnsureDiscoveryChannel()
+end)
+
+------------------------------------------------------------------------
+-- Test build: a locked channel
+--
+-- Whoever has been in a custom channel longest owns it, and an owner can put a password on
+-- it or ban people. A join is then refused, and the game puts a password box on the
+-- player's screen each time the addon retries. Seen in game on 1.60.1: the client fires
+-- CHANNEL_PASSWORD_REQUEST with the channel's name, then a WRONG_PASSWORD channel notice.
+--
+-- So: close the box, stop asking for that name, and use the next one: TheFishingLogTest2,
+-- then 3, up to FALLBACKS. Every copy walks the same list from the start at each login, so
+-- everyone ends up in the lowest name that is open. While in a later name, the earlier ones
+-- are asked for again every RECHECK seconds, one at a time, and we move back down when one
+-- opens. Nothing is saved: a lock is somebody's doing, not a fact about the name.
+-- Record sync by whisper, guild and group does not depend on any of this.
+------------------------------------------------------------------------
+local FALLBACKS = 20
+local RECHECK = 1800
+local lockedAt = {} -- name, lower case -> GetTime() it last refused us (or we last asked)
+local lockTold = false
+
+local function ChannelName(index) return index == 1 and MF.CHANNEL_BASE or (MF.CHANNEL_BASE .. index) end
+local function ChannelIndex(name)
+    if type(name) ~= "string" then return nil end
+    name = name:gsub("^%d+%.%s*", ""):lower()
+    local base = MF.CHANNEL_BASE:lower()
+    if name == base then return 1 end
+    if name:sub(1, #base) ~= base then return nil end
+    local n = tonumber(name:sub(#base + 1):match("^(%d%d?)$"))
+    return n and n >= 2 and n <= FALLBACKS and n or nil
+end
+function MF:IsOurChannelName(name) return ChannelIndex(name) ~= nil end
+
+-- The game's "enter the password for <channel>" box, if it is up for one of our names.
+local function HidePasswordBox(name)
+    if type(StaticPopup_Visible) ~= "function" or type(StaticPopup_Hide) ~= "function" then return false end
+    local a, b = StaticPopup_Visible("CHAT_CHANNEL_PASSWORD")
+    local frame = type(b) == "table" and b or type(a) == "table" and a or (type(a) == "string" and _G[a]) or nil
+    if not a then return false end
+    local data = type(frame) == "table" and frame.data or nil
+    if type(data) == "string" and not ChannelIndex(data) then return false end -- the player's own channel: theirs to answer
+    pcall(StaticPopup_Hide, "CHAT_CHANNEL_PASSWORD", data)
+    MF.passwordBoxesClosed = (MF.passwordBoxesClosed or 0) + 1
+    return true
+end
+
+function MF:ChannelLocked(name, why)
+    local index = ChannelIndex(name)
+    if not index then return end
+    name = ChannelName(index)
+    -- The game's own handler for the same event may run after ours, so look again next frame.
+    HidePasswordBox(name)
+    if C_Timer and C_Timer.After then C_Timer.After(0, function() HidePasswordBox(name) end) end
+    local key, now = name:lower(), GetTime()
+    local fresh = not lockedAt[key] or now - lockedAt[key] > 5 -- the event and the notice arrive as a pair
+    lockedAt[key] = now
+    if not fresh then return end
+    self.channelLocks = (self.channelLocks or 0) + 1
+    self.lastChannelLock = name .. " " .. tostring(why)
+    if key ~= tostring(self.CHANNEL):lower() then return end -- an earlier name asked for again: still locked
+    local nextIndex = index + 1
+    while nextIndex <= FALLBACKS do
+        local at = lockedAt[ChannelName(nextIndex):lower()]
+        if not at or now - at >= RECHECK then break end
+        nextIndex = nextIndex + 1
+    end
+    local state = self.discoveryJoin
+    if nextIndex > FALLBACKS then
+        if state then state.error = "every channel name is locked" state.nextAt = now + RECHECK end
+        return
+    end
+    self.CHANNEL = ChannelName(nextIndex)
+    if not lockTold then
+        lockTold = true
+        self:Print("Someone has locked the channel this addon uses to find other anglers. Using another one. "
+            .. "Syncing with people you already know is not affected.")
+    end
+    if state then
+        state.joined, state.attempts, state.last, state.nextAt = false, 0, -math.huge, 0
+        state.error = "moved to " .. self.CHANNEL .. " (the one before is locked)"
+        C_Timer.After(2, function()
+            if self.discoveryJoin == state then self:JoinChannel(true) end
+        end)
+    end
+end
+-- pcall: asking a client for an event it does not have raises an error.
+pcall(MF.On, MF, "CHANNEL_PASSWORD_REQUEST", function(self, name) self:ChannelLocked(name, "PASSWORD_REQUEST") end)
+pcall(MF.On, MF, "CHAT_MSG_CHANNEL_NOTICE", function(self, notice, _, _, prefixed, _, _, _, _, base)
+    if notice == "WRONG_PASSWORD" or notice == "BANNED" then
+        self:ChannelLocked(type(base) == "string" and base ~= "" and base or prefixed, notice)
+    end
+end)
+
+-- In a later name: get back to an earlier one as soon as it opens.
+local lowerCheckAt = 0
+MF:OnTick(function(self)
+    local now = GetTime()
+    if now < lowerCheckAt then return end
+    lowerCheckAt = now + 30
+    local index = ChannelIndex(self.CHANNEL) or 1
+    if index <= 1 or not self.db or not self.db.settings.channel or not self.discoveryJoin then return end
+    for i = 1, index - 1 do
+        local name = ChannelName(i)
+        local id = GetChannelName(name)
+        if type(id) == "number" and id > 0 then -- an earlier ask went through
+            local old = self.CHANNEL
+            self.CHANNEL, lockedAt[name:lower()] = name, nil
+            if type(LeaveChannelByName) == "function" then
+                local oldID = GetChannelName(old)
+                if type(oldID) == "number" and oldID > 0 then pcall(LeaveChannelByName, old) end
+            end
+            self.discoveryJoin.joined = false -- so the next health check announces the channel and scans it
+            return
+        end
+    end
+    for i = 1, index - 1 do
+        local name = ChannelName(i)
+        local at = lockedAt[name:lower()]
+        if not at or now - at >= RECHECK then
+            lockedAt[name:lower()] = now -- asked: whatever the answer, not again for RECHECK
+            if type(JoinTemporaryChannel) == "function" then pcall(JoinTemporaryChannel, name) end
+            return
+        end
+    end
 end)
 
 ------------------------------------------------------------------------
@@ -380,7 +509,9 @@ function MF:IsDiscoveryChannelNotice(notice, prefixed, base)
     if notice == "YOU_LEFT" then return false end
     local name = type(base) == "string" and base ~= "" and base
         or (type(prefixed) == "string" and prefixed:gsub("^%d+%.%s*", "")) or ""
-    if name:lower() ~= tostring(self.CHANNEL):lower() then return false end
+    if not self:IsOurChannelName(name) then return false end
+    if notice == "WRONG_PASSWORD" or notice == "BANNED" then self:ChannelLocked(name, notice) end
+    if name:lower() ~= tostring(self.CHANNEL):lower() then return true end -- one of our other names: hidden, nothing to record
     if notice ~= "YOU_JOINED" and notice ~= "YOU_CHANGED" then
         local state = self.discoveryJoin
         if state and not JoinedID(self) then state.error = "the server answered " .. tostring(notice) end

@@ -352,6 +352,122 @@ test("/tfl channeltest join asks for one of our channels and records how the cli
     assert(ok, err)
 end)
 
+test("a locked channel: the password box is closed, the next name is used, and it moves back when the lock goes", function()
+    local names = { "GetChannelName", "JoinTemporaryChannel", "LeaveChannelByName", "StaticPopup_Visible", "StaticPopup_Hide", "StaticPopup1" }
+    local saved = {}
+    for _, n in ipairs(names) do saved[n] = _G[n] end
+    local ok, err = pcall(function()
+        local c = Client()
+        c.db.settings.channel = true
+        local said = {}
+        function c:Print(msg) said[#said + 1] = msg end
+        local lockedNames, inside, asked, left, nextID = { TheFishingLogTest = true, TheFishingLogTest2 = true }, {}, {}, {}, 5
+        local box -- the channel the password box is asking about, if it is up
+        StaticPopup1 = {}
+        StaticPopup_Visible = function(which) if which == "CHAT_CHANNEL_PASSWORD" and box then StaticPopup1.data = box return "StaticPopup1" end end
+        StaticPopup_Hide = function(which, data) if which == "CHAT_CHANNEL_PASSWORD" and data == box then box = nil end end
+        GetChannelName = function(name) return inside[name] or 0, name end
+        JoinTemporaryChannel = function(name)
+            asked[#asked + 1] = name
+            if lockedNames[name] then
+                -- the server's answer arrives after the call returns, as it does in the game
+                C_Timer.After(0, function()
+                    box = name
+                    c:Fire("CHANNEL_PASSWORD_REQUEST", name)
+                    c:Fire("CHAT_MSG_CHANNEL_NOTICE", "WRONG_PASSWORD", "", "", name, "", "", 0, 0, name)
+                end)
+            else nextID = nextID + 1; inside[name] = nextID end
+        end
+        LeaveChannelByName = function(name) left[#left + 1] = name; inside[name] = nil end
+        local function settle(seconds)
+            for _ = 1, seconds do F.advance(1); F.flush(); for _, fn in ipairs(c.ticks) do fn(c) end end
+        end
+        assert(c:IsOurChannelName("TheFishingLogTest") and c:IsOurChannelName("6. TheFishingLogTest2") and c:IsOurChannelName("thefishinglogtest20"))
+        for _, other in ipairs({ "TheFishingLog", "TheFishingLogTest1", "TheFishingLogTest21", "TheFishingLogTestX", "Trade", "TheFishingLogTest2b" }) do
+            assert(not c:IsOurChannelName(other), other .. " is not one of ours")
+        end
+
+        c.discoveryJoin = { attempts = 0, last = -math.huge, nextAt = 0, readyAt = 0 }
+        c:JoinChannel(true)
+        settle(10)
+        assert(table.concat(asked, ",") == "TheFishingLogTest,TheFishingLogTest2,TheFishingLogTest3", table.concat(asked, ","))
+        assert(c.CHANNEL == "TheFishingLogTest3" and inside.TheFishingLogTest3, "should have settled in the first open name")
+        assert(box == nil and c.passwordBoxesClosed >= 2, "a password box was left on screen")
+        assert(c.channelLocks == 2 and #said == 1 and said[1]:find("locked the channel", 1, true), "told once: " .. #said)
+        assert(c:DiscoveryJoinStatus():find("TheFishingLogTest3", 1, true), c:DiscoveryJoinStatus())
+        -- the chat lines about our other names stay hidden, and so does nothing else
+        assert(c:IsDiscoveryChannelNotice("WRONG_PASSWORD", "TheFishingLogTest", "TheFishingLogTest") == true)
+        assert(c:IsDiscoveryChannelNotice("WRONG_PASSWORD", "Trade", "Trade") == false)
+
+        -- a password box for a channel of the player's own is left alone
+        box = "MyGuildChannel"
+        c:ChannelLocked("TheFishingLogTest", "WRONG_PASSWORD"); F.flush()
+        assert(box == "MyGuildChannel", "closed a password box that was not ours")
+        box = nil
+
+        -- /tfl channeltest base: the same walk against a stand-in name, leaving the real channel alone
+        local timer = C_Timer
+        assert(loadfile(source .. "TestBuild.lua"))("TheFishingLogTest", c)
+        lockedNames.TFLLockTest = true
+        said, asked = {}, {}
+        c:ChannelBaseTest("Trade"); assert(#asked == 0 and said[1]:find("starting with TFL", 1, true))
+        said = {}
+        c:ChannelBaseTest("TFLLockTest")
+        settle(15)
+        assert(table.concat(asked, ",") == "TFLLockTest,TFLLockTest2" and c.CHANNEL == "TFLLockTest2" and box == nil, table.concat(asked, ",") .. " / " .. c.CHANNEL)
+        assert(left[1] == "TheFishingLogTest3", "leaves the real channel it was in")
+        -- (the fixture runs every timer on the next tick, so the 12-second report comes early here; only its shape is checked)
+        local report = table.concat(said, " | ")
+        assert(report:find("for this session the finder channel is TFLLockTest", 1, true) and report:find("Channel fallback: ended up in TFLLockTest", 1, true)
+            and report:find("Box on screen now: no", 1, true), report)
+        -- back to the real names for the rest of this test
+        LeaveChannelByName("TFLLockTest2"); left = {}
+        c.CHANNEL_BASE, c.CHANNEL = "TheFishingLogTest", "TheFishingLogTest3"
+        inside.TheFishingLogTest3 = 9
+        said = { "told once" }
+
+        -- half an hour on, the first name opens again: ask, get in, leave the later one
+        lockedNames.TheFishingLogTest = nil
+        asked = {}
+        settle(1900)
+        assert(c.CHANNEL == "TheFishingLogTest" and inside.TheFishingLogTest, "should have moved back, is in " .. c.CHANNEL)
+        assert(left[1] == "TheFishingLogTest3" and not inside.TheFishingLogTest3, "should leave the name it no longer needs")
+        assert(#asked <= 2 and asked[#asked] == "TheFishingLogTest", "one ask per earlier name per half hour: " .. table.concat(asked, ","))
+        assert(#said == 1, "moving back is not announced")
+        assert(box == nil)
+    end)
+    for _, n in ipairs(names) do _G[n] = saved[n] end
+    assert(ok, err)
+end)
+
+test("when every name is locked it stops asking, and no box is left up", function()
+    local names = { "GetChannelName", "JoinTemporaryChannel", "StaticPopup_Visible", "StaticPopup_Hide", "StaticPopup1" }
+    local saved = {}
+    for _, n in ipairs(names) do saved[n] = _G[n] end
+    local ok, err = pcall(function()
+        local c = Client()
+        c.db.settings.channel = true
+        function c:Print() end
+        local asked, box = 0, nil
+        StaticPopup1 = {}
+        StaticPopup_Visible = function() if box then StaticPopup1.data = box return "StaticPopup1" end end
+        StaticPopup_Hide = function() box = nil end
+        GetChannelName = function(name) return 0, name end
+        JoinTemporaryChannel = function(name)
+            asked = asked + 1
+            C_Timer.After(0, function() box = name; c:Fire("CHANNEL_PASSWORD_REQUEST", name) end)
+        end
+        c.discoveryJoin = { attempts = 0, last = -math.huge, nextAt = 0, readyAt = 0 }
+        c:JoinChannel(true)
+        for _ = 1, 120 do F.advance(1); F.flush(); for _, fn in ipairs(c.ticks) do fn(c) end end
+        assert(asked == 20, "asked " .. asked .. " times in two minutes; expected each of the 20 names once")
+        assert(c.CHANNEL == "TheFishingLogTest20" and box == nil)
+        assert(c.discoveryJoin.error == "every channel name is locked", tostring(c.discoveryJoin.error))
+    end)
+    for _, n in ipairs(names) do _G[n] = saved[n] end
+    assert(ok, err)
+end)
+
 test("world probe reports what the client says and survives a client that says nothing", function()
     local c = { listeners = {}, ADDON = "TheFishingLogTest", cdb = { realm = "Kept" } }
     function c:On(event, fn) self.listeners[event] = self.listeners[event] or {}; table.insert(self.listeners[event], fn) end

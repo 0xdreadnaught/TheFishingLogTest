@@ -268,14 +268,42 @@ function MF:ChannelJoinTest(name)
     end)
 end
 
+
+-- Try the locked-channel handling (Comm.lua, "A locked channel") without touching the real
+-- finder channel: for this session only, the addon looks for other anglers in NAME instead.
+-- Have someone lock NAME first (/join NAME secret). A /reload puts everything back.
+-- /tfl channeltest base NAME
+function MF:ChannelBaseTest(name)
+    local say = function(text) self:Print("Channel fallback: " .. text) end
+    if type(name) ~= "string" or not name:find("^TFL[%a]+$") or #name > 24 then
+        return say("give a name starting with TFL, letters only. Example: /tfl channeltest base TFLLockTest")
+    end
+    if not (self.JoinChannel and self.CHANNEL_BASE and C_Timer and C_Timer.After) then return say("this copy has no fallback to try.") end
+    if JoinedNumber(self.CHANNEL) and type(LeaveChannelByName) == "function" then pcall(LeaveChannelByName, self.CHANNEL) end
+    self.CHANNEL_BASE, self.CHANNEL = name, name
+    self.discoveryJoin = { attempts = 0, last = -math.huge, nextAt = 0, readyAt = 0 }
+    local locksBefore, boxesBefore = self.channelLocks or 0, self.passwordBoxesClosed or 0
+    say("for this session the finder channel is " .. name .. ". Asking to join it now; watch for a password box. /reload undoes this.")
+    self:JoinChannel(true)
+    C_Timer.After(12, function()
+        local id = JoinedNumber(self.CHANNEL)
+        local box = type(StaticPopup_Visible) == "function" and StaticPopup_Visible("CHAT_CHANNEL_PASSWORD") and true or false
+        say(("ended up in %s (%s). Locked names met: %d. Password boxes closed: %d. Box on screen now: %s."):format(
+            tostring(self.CHANNEL), id and ("channel " .. id) or "not joined yet", (self.channelLocks or 0) - locksBefore,
+            (self.passwordBoxesClosed or 0) - boxesBefore, box and "YES" or "no"))
+    end)
+end
+
 if MF.Command then
     MF:Command("channeltest", "Other",
-        "/tfl channeltest - test build: can addon messages use the finder channel? (also: slots, rate, join NAME)",
+        "/tfl channeltest - test build: can addon messages use the finder channel? (also: slots, rate, join NAME, base NAME)",
         function(self, args, rest)
             local what = args and args[1]
+            local word = type(rest) == "string" and rest:match("^%S+%s+(%S+)") or nil
             if what == "slots" then self:ChannelSlotTest()
             elseif what == "rate" then self:ChannelRateTest()
-            elseif what == "join" then self:ChannelJoinTest(type(rest) == "string" and rest:match("^%S+%s+(%S+)") or nil)
+            elseif what == "join" then self:ChannelJoinTest(word)
+            elseif what == "base" then self:ChannelBaseTest(word)
             else self:ChannelSendTest() end
         end)
 end
@@ -359,7 +387,8 @@ function MF:WorldProbeLines()
     Line("lock signals", "password-request event " .. (lockEvent and "exists" or "absent") .. " | seen: "
         .. (#lockSignals > 0 and table.concat(lockSignals, "; ") or "none"))
     Line("channel slots", "stated limit " .. tostring(MAX_WOW_CHAT_CHANNELS) .. " | joined now " .. tostring(ChannelsJoined())
-        .. " | ours is number " .. tostring(JoinedNumber(self.CHANNEL or "")))
+        .. " | ours is " .. tostring(self.CHANNEL) .. ", number " .. tostring(JoinedNumber(self.CHANNEL or ""))
+        .. " | locked names met " .. tostring(self.channelLocks or 0) .. " | password boxes closed " .. tostring(self.passwordBoxesClosed or 0))
     Line("builds", "mine " .. tostring(Mine()) .. " | heard this session: " .. self:BuildsHeardText())
     Line("region", Call("GetCurrentRegion") .. " | name " .. Call("GetCurrentRegionName"))
     Line("realm name", Call("GetRealmName") .. " | normalized " .. Call("GetNormalizedRealmName")
