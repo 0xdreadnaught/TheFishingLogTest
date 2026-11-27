@@ -507,9 +507,11 @@ local function CreateToast()
     fade:SetScript("OnFinished", function() toast:Hide(); NextToast() end)
     toast.fade = fade
     toast:SetScript("OnMouseDown", function(_, button)
-        local id = toast.card
+        local id, action = toast.card, toast.action
         fade:Stop(); toast:Hide(); NextToast()
-        if id and button ~= "RightButton" then MF:ShowCard(id) end
+        if button ~= "RightButton" then
+            if action then action() elseif id then MF:ShowCard(id) end
+        end
     end)
 end
 
@@ -530,6 +532,7 @@ end
 
 -- Big centre-screen pop-up (specimens, records, rank ups, frenzies, wins).
 local POPUP_SETTINGS = {
+    ["SYNC STARTED"] = "popupSync",
     ["SPECIMEN!"] = "popupSpecimens", ["NEW SPECIMEN!"] = "popupSpecimens",
     ["KING OF THE SPOT"] = "popupRecords", ["RANK UP!"] = "popupRanks",
     ["FEEDING FRENZY"] = "popupFrenzies", ["BOUNTY REWARD"] = "popupBounties", ["FRENZY SOON"] = "popupFrenzies",
@@ -537,6 +540,7 @@ local POPUP_SETTINGS = {
 
 -- Which sound switch each pop-up's sound answers to.
 local SOUND_SETTINGS = {
+    ["SYNC STARTED"] = "soundSync",
     ["SPECIMEN!"] = "soundSpecimens", ["NEW SPECIMEN!"] = "soundSpecimens",
     ["KING OF THE SPOT"] = "soundRecords", ["RANK UP!"] = "soundRanks",
     ["NEW CARD"] = "soundCards",
@@ -585,6 +589,7 @@ NextToast = function()
     toast.line1:SetText(line1 or "")
     toast.line2:SetText(line2 or "")
     toast.card = notice.card
+    toast.action = notice.action
     toast:SetHeight(math.max(96, 32 + toast.header:GetStringHeight()
         + toast.line1:GetStringHeight() + toast.line2:GetStringHeight() + 6))
     toast.fade:Stop()
@@ -600,7 +605,10 @@ function MF:Toast(icon, header, line1, line2, r, g, b, sound, context)
     if not toast or not self:PopupAllowed(header) then self:Sound(sound, SOUND_SETTINGS[header]) return end
     if #toastQueue >= 20 then table.remove(toastQueue, 1) end
     local notice = { icon, header, line1, line2, r, g, b, sound }
-    if context then notice.spot, notice.expires, notice.card = context.spot, context.expires, context.card end
+    if context then
+        notice.spot, notice.expires, notice.card = context.spot, context.expires, context.card
+        notice.action = context.onClick
+    end
     toastQueue[#toastQueue + 1] = notice
     NextToast()
 end

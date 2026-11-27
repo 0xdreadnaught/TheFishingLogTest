@@ -87,6 +87,14 @@ local function Pump()
                 tokens = 0
                 return
             end
+            local transfer = item.transfer
+            if transfer then
+                local name = item.dist == "WHISPER" and target or item.dist
+                MF:SyncPacketStarted(name, item.dist, "out", transfer.kind)
+                if result == false or (type(result) == "number" and result ~= 0) then transfer.failed = true end
+                transfer.remaining = transfer.remaining - 1
+                if transfer.remaining == 0 then MF:SyncSendFinished(transfer) end
+            end
             tokens = tokens - 1
         end
     end
@@ -96,6 +104,11 @@ local MATCH_CONTROL = { INV = true, INVNO = true, HOST2 = true, JOIN = true, LEA
 
 local function Enqueue(dist, target, msg, priority)
     local kind = msg:match("^([^~]+)")
+    local transfer
+    if MF.IsSyncKind and MF:IsSyncKind(kind) then
+        local fields = { strsplit(SEP, msg) }; table.remove(fields, 1)
+        transfer = { kind=kind,fields=fields,dist=dist,target=target,remaining=1 }
+    end
     if kind == "GMATCH1" then
         local _, _, inner = strsplit(SEP, msg, 4)
         kind = inner -- private match controls keep the same queue priority
@@ -105,6 +118,7 @@ local function Enqueue(dist, target, msg, priority)
     -- catches, which precede bulk sync, without bypassing the token bucket.
     local function Insert(item)
         item.priority = priority
+        item.transfer = transfer
         local at = #queue + 1
         for i, queued in ipairs(queue) do
             if (queued.priority or 0) < priority then at = i break end
@@ -119,6 +133,7 @@ local function Enqueue(dist, target, msg, priority)
     end
     chunkID = chunkID % 9999 + 1
     local n = math.ceil(#msg / CHUNK_LEN)
+    if transfer then transfer.remaining = n end
     for i = 1, n do
         local part = msg:sub((i - 1) * CHUNK_LEN + 1, i * CHUNK_LEN)
         Insert({ dist = dist, target = target,
@@ -503,6 +518,14 @@ function MF:CommunicationStatus()
         #queue, self.Count(partial), self.transfersCompleted or 0, self.transfersExpired or 0)
 end
 
+function MF:SyncTransfersPending()
+    for _, item in ipairs(queue) do if item.transfer then return true end end
+    -- An out-of-order first chunk can arrive later; do not close an active
+    -- report while an unidentified FishingLog transfer is still arriving.
+    for _, buf in pairs(partial) do if buf.syncKind or not buf.kindKnown then return true end end
+    return false
+end
+
 local function Dispatch(self, sender, text)
     local envelope,epoch,body=strsplit(SEP,text,3)
     if GetServerTime()>=self.FRESH_START then
@@ -520,7 +543,12 @@ local function Dispatch(self, sender, text)
         -- What arrives was written by another client, which may be older,
         -- newer or simply broken. A message it got wrong is dropped and
         -- counted for /tfl diag, rather than raising a Lua error on ours.
+        local context = self.SyncMessageBegin and self:SyncMessageBegin(sender, self.lastRoad, kind, fields)
+        local previous = self.syncReceiveContext
+        self.syncReceiveContext = context
         local ok, err = pcall(handler, self, sender, unpack(fields))
+        self.syncReceiveContext = previous
+        if context then self:SyncMessageEnd(context, ok) end
         if not ok then
             self.handlerErrors = (self.handlerErrors or 0) + 1
             self.lastHandlerError = tostring(kind) .. ": " .. tostring(err):sub(1, 160)
@@ -540,7 +568,7 @@ local function Reassemble(self, sender, rest)
     if buf and buf.n~=n then return end
     if not buf then
         if self.Count(partial)>=MAX_PARTIAL then return end
-        buf = { n = n, got = 0, parts = {}, at = GetTime(), lastAt = GetTime() }
+        buf = { n = n, got = 0, parts = {}, at = GetTime(), lastAt = GetTime(), sender=sender, road=self.lastRoad }
         partial[key] = buf
     end
     if not buf.parts[i] then
@@ -549,6 +577,15 @@ local function Reassemble(self, sender, rest)
         -- Refresh only on progress. Duplicate fragments must not keep an
         -- abandoned transfer alive. A throttled map sync can exceed 120s.
         buf.lastAt = GetTime()
+        if i == 1 and self.IsSyncKind then
+            local first, epoch, body = strsplit(SEP, part, 3)
+            buf.kindKnown = true
+            if GetServerTime() >= self.FRESH_START then
+                first = first == "LIVE1" and tonumber(epoch) == self.FRESH_START and body and body:match("^([^~]+)")
+            elseif first == "LIVE1" then first = nil end
+            if first and self:IsSyncKind(first) then buf.syncKind, buf.sender, buf.road = first, sender, self.lastRoad end
+        end
+        if buf.syncKind then self:SyncPacketStarted(sender, self.lastRoad, "in", buf.syncKind) end
     end
     if buf.got == buf.n then
         partial[key] = nil
@@ -586,6 +623,7 @@ function MF:ResetCommunicationState()
     queue,whispered,answered,partial,finished={},{},{},{},{}
     self.heard={}
     self.transfersCompleted, self.transfersExpired = 0, 0
+    if self.ResetSyncActivity then self:ResetSyncActivity() end
 end
 
 -- Forget reassembly state that's old enough not to matter: finished
@@ -603,6 +641,8 @@ MF:OnTick(function()
         if buf.lastAt < cutoff or GetTime() - buf.at > MAX_TRANSFER_AGE then
             partial[key] = nil
             MF.transfersExpired = (MF.transfersExpired or 0) + 1
+            if buf.syncKind then MF:SyncTransferFailed(buf.sender, buf.road, buf.syncKind)
+            elseif not buf.kindKnown and MF.SyncUnknownTransferFailed then MF:SyncUnknownTransferFailed(buf.sender) end
         end
     end
     for topic, at in pairs(answered) do

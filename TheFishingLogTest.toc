@@ -4,7 +4,7 @@
 ## Notes: Location-based fishing: solo logs, live matches, spot records, bounties and an angler's journal.
 ## Author: Jake (new look based on Godfall's UI Rework, MIT)
 ## Version: 1.1.4
-## X-Build: 2
+## X-Build: 3
 ## SavedVariables: TheFishingLogDB, TheFishingLogDiscord, AnglersLodgeDB
 ## SavedVariablesPerCharacter: TheFishingLogChar
 ## IconTexture: Interface\Icons\Trade_Fishing
@@ -23,6 +23,7 @@ Fish.lua
 Geography.lua
 Spots.lua
 Comm.lua
+SyncLog.lua
 Compat.lua
 
 # Features. TFL_CATCH listeners run in this order: Profile, Session, Match.
@@ -104,6 +105,7 @@ Rework\HerePage.lua
 Rework\GoalsPage.lua
 Rework\RealmPage.lua
 Rework\Toast.lua
+Rework\SyncReport.lua
 Rework\Board.lua
 Rework\Settings.lua
 Rework\Options.lua

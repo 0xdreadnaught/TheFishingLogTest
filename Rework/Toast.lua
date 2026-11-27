@@ -69,9 +69,11 @@ local function Build()
 
     f:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     f:SetScript("OnClick", function(_, button)
-        local card = f.card
+        local card, action = f.card, f.action
         T:Dismiss()
-        if card and button ~= "RightButton" then MF:ShowCard(card) end
+        if button ~= "RightButton" then
+            if action then action() elseif card then MF:ShowCard(card) end
+        end
     end)
     f:SetScript("OnEnter", function() f.hover = true end)
     f:SetScript("OnLeave", function() f.hover = nil end)
@@ -107,6 +109,7 @@ function T:Show(n)
     if not f then return end
     local icon, header, line1, line2, r, g, b = unpack(n, 1, 7)
     f.card = n.card
+    f.action = n.action
     f.icon.icon:SetTexture(icon or 134400)
     f.header:SetText(header or "")
     f.header:SetTextColor(r or 1, g or 0.82, b or 0)

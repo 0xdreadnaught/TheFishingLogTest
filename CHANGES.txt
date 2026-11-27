@@ -1,6 +1,25 @@
-The Fishing Log (Test) - build 2
+The Fishing Log (Test) - build 3
 
-Record sync fixes:
+Sync alerts and reports:
+- One clickable start toast and ding per batch of overlapping exchanges.
+- A themed report opens after activity settles, deferred while in combat.
+  It shows peers, routes, requests, received/sent totals, waters, and actual
+  new/updated/season records with their holders and previous weights on hover.
+- /tfl synclog reopens current/recent activity. Older/Newer browse the last
+  ten reports; Copy exports the report and Realm opens the standings.
+- Alerts & chat has Sync starts and Open reports after sync. Sounds has
+  its own Sync starts switch. Existing global sound/toast switches apply.
+- Completion is inferred: 20 seconds quiet with no queued/receiving transfers;
+  requested data gets 120 seconds to arrive. Missing replies, errors, and
+  expired transfers are marked. A handshake is not a delivered record book,
+  and sent totals never claim the other client received them.
+- Reports are local and bounded (ten reports, 32 peers and 160 record details
+  per report); no extra traffic or protocol changes are introduced.
+
+Transport/report regression checks and mocked report-window checks pass.
+Live in-game display and player-to-player behavior still need confirmation.
+
+Record sync fixes from build 2:
 - Whisper follow-ups return to the peer, including when guild/group routes
   are absent. The existing record tally also travels during whisper swaps.
 - Routine books relay a rotating slice of all known species records, including
@@ -44,11 +63,11 @@ Godfall's existing community theme, artwork, widgets, and MIT attribution are
 preserved. See LICENSE-UIRework.txt. This development build uses the existing
 saved data and remains dormant while the original TheFishingLog is enabled.
 
-Restart the client after installing this build to pick up the added Lua file.
+Restart the client after installing this build to pick up the added Lua files.
 Enable The Fishing Log (Test) with the original The Fishing Log disabled.
 No data migration is needed.
 
-Validation: all 86 Lua files parse as Lua 5.1; TOC entries and load order checked.
+Validation: all 88 Lua files parse as Lua 5.1; TOC entries and load order checked.
 Mock-client checks cover outfit slot preservation, two-hand/off-hand behavior,
 delayed loading and failures, event refresh, rank/XP, camera controls, journal
 construction, bottom tabs, and workspace width. In-game rendering has not been

@@ -128,6 +128,9 @@ local DEFAULT_SETTINGS = {
     soundMatches = true,
     soundSeasons = true,
     soundGoals = true,
+    soundSync = true,
+    popupSync = true,
+    syncReportPopup = true,
     -- A new setting key also enables this for profiles with the old off default.
     bobberAutoAssist = true,
     castFeedback = true,

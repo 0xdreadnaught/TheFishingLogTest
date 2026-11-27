@@ -180,6 +180,7 @@ function MF:MergeRecord(key, mapID, itemID, w, holder, t, spec)
     local s = self:Spot(key, true, mapID)
     local rec = { h = holder, w = w, t = t, s = spec and true or nil }
     local prev = s.fish[itemID]
+    local prevSeason = s.season[itemID]
     local all, season = false, false
     if Better(prev, w, t) then
         s.fish[itemID] = rec
@@ -189,6 +190,7 @@ function MF:MergeRecord(key, mapID, itemID, w, holder, t, spec)
         s.season[itemID] = rec
         season = true
     end
+    if self.SyncRecordMerged then self:SyncRecordMerged(key, mapID, itemID, rec, prev, all, season, prevSeason) end
     return all, season, prev
 end
 
