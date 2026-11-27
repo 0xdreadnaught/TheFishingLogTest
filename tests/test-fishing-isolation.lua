@@ -65,8 +65,81 @@ test("login shows the test-build notice with the build number", function()
     C_Timer, GetAddOnMetadata = timer, meta
     assert(ok, err)
     assert(waited and waited > 0, "notice should wait for the login chatter to pass")
-    assert(#said == 1, "expected one notice, got " .. #said)
     assert(said[1]:find("TEST BUILD 5", 1, true) and said[1]:find("not the main addon", 1, true), said[1])
+    -- no world known: the second line says nothing will sync and what to do about it
+    assert(#said == 2 and said[2]:find("Couldn't tell", 1, true) and said[2]:find("/tfl clientdiag", 1, true), tostring(said[2]))
+    -- world known: the second line names it
+    said = {}
+    c.worldKey = "US-PvP"; function c:WorldLabel() return "Americas & Oceania, PvP" end
+    c:TestBuildNotice()
+    assert(#said == 2 and said[2]:find("You are on Americas & Oceania, PvP", 1, true), tostring(said[2]))
+end)
+
+test("a newer build heard from another tester is announced once; older, equal and junk are not", function()
+    local c, said = { listeners = {}, ADDON = "TheFishingLogTest" }, {}
+    function c:On(event, fn) self.listeners[event] = self.listeners[event] or {}; table.insert(self.listeners[event], fn) end
+    function c:Print(msg) said[#said + 1] = msg end
+    function c:IsMe(name) return name == "Me" end
+    function c:AnglerKey(name) return name:lower() end
+    function c.BuildNumber() return "12" end
+    local timer = C_Timer
+    C_Timer = { After = function(_, fn) fn() end }
+    local ok, err = pcall(function()
+        assert(loadfile(source .. "TestBuild.lua"))("TheFishingLogTest", c)
+        assert(c:BuildsHeardText() == "none yet")
+        for _, junk in ipairs({ "", "abc", "1.1.4", "-3", "0", "123456", "12x" }) do c:NoteBuild("Peer", junk) end
+        c:NoteBuild("Peer", nil); c:NoteBuild("Me", "99")
+        assert(#said == 0 and c:BuildsHeardText() == "none yet", "junk or my own build counted: " .. c:BuildsHeardText())
+        c:NoteBuild("Old", "10"); c:NoteBuild("Same", "12")
+        assert(#said == 0, "an older or equal build is nothing to announce")
+        c:NoteBuild("New", "14")
+        assert(#said == 1 and said[1]:find("Test build 14 is out; you have 12", 1, true) and said[1]:find("git pull", 1, true), tostring(said[1]))
+        c:NoteBuild("Newer", "15"); c:NoteBuild("New", "14")
+        assert(#said == 1, "announced more than once in a session")
+        assert(c:BuildsHeardText() == "15 x1, 14 x1, 12 x1, 10 x1", c:BuildsHeardText())
+    end)
+    C_Timer = timer
+    assert(ok, err)
+end)
+
+test("WHO and HERE end with the build number, and a WHO or HERE without one is still handled", function()
+    local c, pump = Client()
+    local meta = GetAddOnMetadata
+    GetAddOnMetadata = function(_, field) return field == "X-Build" and "12" or field == "Version" and "1.1.4" or nil end
+    local heard = {}
+    local ok, err = pcall(function()
+        c.ADDON = "TheFishingLogTest"
+        c.census = c.census or { players = {} }
+        function c:NoteBuild(sender, build) heard[#heard + 1] = sender .. "=" .. tostring(build) end
+        function c:ReplyOnce(_, _, _, fn) fn() end
+        function c:MyRank() return 3 end
+        function c:MapID() return 1458 end
+        function c:MyFaction() return "H" end
+        function c:MyGuild() return "" end
+        function c:CountingFloor() return "1.1.2" end
+        function c:NoteCountingFloor() end
+        function c:RankFromWire(rank) return rank end
+        function c:NoteAngler() end
+        function c:NoteGuild() end
+        c.ValidVersion = function(v) return type(v) == "string" and v:match("^%d+%.%d+%.%d+$") ~= nil end
+        time = time or os.time
+        assert(loadfile(source .. "Census.lua"))("TheFishingLogTest", c)
+        assert(c.BuildNumber() == "12")
+        -- a whispered WHO from a tester: their build is noted, and our HERE goes back with ours on the end
+        c:Fire("CHAT_MSG_ADDON", c.PREFIX, "LIVE2~1~?~WHO~1.1.4~14", "WHISPER", "Peer")
+        assert(heard[1] == "Peer=14", tostring(heard[1]))
+        for _ = 1, 10 do F.advance(1); pump() end
+        local here
+        for _, m in ipairs(wire) do if m.msg:find("~HERE~", 1, true) then here = m.msg end end
+        assert(here and here:find("~1%.1%.2~12$"), "HERE should end with the counting floor then the build: " .. tostring(here))
+        -- from a build that doesn't send one (10 to 15)
+        c:Fire("CHAT_MSG_ADDON", c.PREFIX, "LIVE2~1~?~WHO~1.1.4", "WHISPER", "Older")
+        c:Fire("CHAT_MSG_ADDON", c.PREFIX, "LIVE2~1~?~HERE~1.1.4~3~1458~H~100~~50~1.1.2", "WHISPER", "Older")
+        c:Fire("CHAT_MSG_ADDON", c.PREFIX, "LIVE2~1~?~HERE~1.1.4~3~1458~H~100~~50~1.1.2~15", "WHISPER", "Newer")
+        assert(heard[2] == "Older=nil" and heard[3] == "Older=nil" and heard[4] == "Newer=15", table.concat(heard, " "))
+    end)
+    GetAddOnMetadata = meta
+    assert(ok, err)
 end)
 
 test("world probe reports what the client says and survives a client that says nothing", function()

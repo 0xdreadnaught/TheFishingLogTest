@@ -16,7 +16,7 @@ Based on 1.1.4. The full notes are in [CHANGES.txt](CHANGES.txt).
 - Its own message prefix and channel, which is why it can't see the main addon.
 - It knows which region and rule set your character is on, and keeps each one's records, bounties and events apart. Messages from another region or rule set are ignored.
 - The logbook only lists a water for a session if you caught a fish there. The original also lists every water you passed through, with 0 fish.
-- A chat message at login saying it's the test build.
+- A chat message at login saying it's the test build, and another if someone you sync with is on a newer build than you.
 
 ## Install
 
@@ -34,6 +34,14 @@ Restart the game. A `/reload` won't find a new addon. In the AddOns list turn on
 
 The test build starts with an empty log. To bring yours over, log out, then copy `TheFishingLog.lua` to `TheFishingLogTest.lua` in `WTF\Account\YOURACCOUNT\SavedVariables`. Do the same in each character's `SavedVariables` folder.
 
+The original keeps one pile of other people's records for your whole account. If you copy that file, the test build files all of it under the region and rule set of the first character you log in. If you play on more than one rule set and want clean boards, copy only the character files. Those hold your own journal, bests and XP.
+
+## If you're testing
+
+At login the addon says which region and rule set it thinks you're on, for example "You are on Americas & Oceania, PvP". I've only been able to check that on a PvP character, so tell me if yours is wrong. If it says it couldn't tell, type `/tfl clientdiag` and send me the lines that start with "World".
+
+Records, bounties and events only reach people on the same region and rule set as you who are also on the test build, so expect it to be quiet until a few of you are on.
+
 ## For the author
 
 The first real commit is 1.1.4 untouched (`18e3680`), then one commit per build. This shows everything I changed:
@@ -42,7 +50,7 @@ The first real commit is 1.1.4 untouched (`18e3680`), then one commit per build.
 git diff 18e3680 HEAD -- . ':!tests' ':!README.md'
 ```
 
-The version line is still 1.1.4 on purpose. The build number is the `X-Build` line in the toc and it is never sent to other players.
+The version line is still 1.1.4 on purpose. The build number is the `X-Build` line in the toc. It goes out as an extra last field on `WHO` and `HERE`, which is how a tester on an older build gets told to update.
 
 The network split is four constants: `MF.PREFIX` and `MF.CHANNEL` in `Comm.lua`, `PREFIX` in `Rework/RealmPage.lua`, and `MACRO_NAME` in `Storage.lua`. Message formats are the same as 1.1.4 except the envelope. `LIVE1~<launch>~...` is now `LIVE2~<launch>~<world>~...`, where the world is one base-36 number for region and rule set (`1` is Americas PvP). That is `World.lua` plus the envelope lines in `Comm.lua`. The region comes from `GetCurrentRegion()` and the rule set from the `PvPRuleset`, `RPRuleset` and `HardcoreRuleset` game rules. I have only checked it on one PvP character.
 

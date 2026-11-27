@@ -8,9 +8,53 @@ local function Notice(self)
     self:Print(("|cffff8040TEST BUILD%s - not the main addon.|r It only sees anglers who run the test "
         .. "build and keeps its own saved data. The main addon is The Fishing Log on CurseForge.")
         :format(build and build ~= "" and (" " .. build) or ""))
-    if self.WorldLabel then self:Print("You are on " .. self:WorldLabel() .. ". Records, standings and events shown are this world's only.") end
+    if self.WorldLabel and self.worldKey and self.worldKey ~= "?" then
+        self:Print("You are on " .. self:WorldLabel() .. ". Records, standings and events shown are this world's only.")
+    else
+        -- Without a world this copy can only hear other copies that also couldn't tell.
+        self:Print("|cffff8040Couldn't tell which region and rule set this character is on,|r so nothing will sync. "
+            .. "If you just updated, restart the game (a /reload isn't enough). If it still says this, type "
+            .. "|cffffd100/tfl clientdiag|r and send the World lines to whoever gave you the test build.")
+    end
 end
 MF.TestBuildNotice = Notice
+
+-- Which build is everyone else on? Every WHO and HERE ends with the sender's build number
+-- (Census.lua). Builds can differ in ways that stop them hearing each other properly, and the
+-- addon's own "update available" notice never fires here because every test build calls itself
+-- 1.1.4. So the first time someone on a newer build is heard, say so once.
+local REPO = "github.com/0xdreadnaught/TheFishingLogTest"
+local builds, told = {}, false
+local function Mine() return tonumber(MF.BuildNumber and MF.BuildNumber() or "") end
+
+function MF:NoteBuild(sender, build)
+    local n = type(build) == "string" and build:match("^%d%d?%d?%d?%d?$") and tonumber(build)
+    if not n or n < 1 or not sender or (self.IsMe and self:IsMe(sender)) then return end
+    builds[self:AnglerKey(sender)] = n
+    local mine = Mine()
+    if told or not mine or n <= mine then return end
+    told = true
+    local function Say()
+        local newest = 0
+        for _, b in pairs(builds) do if b > newest then newest = b end end
+        self:Print(("|cffff8040Test build %d is out; you have %d.|r Different builds may not sync with each other. "
+            .. "Update with git pull in the addon folder, or get the ZIP from %s, then restart the game.")
+            :format(newest, mine, REPO))
+    end
+    if C_Timer and C_Timer.After then C_Timer.After(30, Say) else Say() end
+end
+
+-- "15 x3, 14 x1": the builds heard this session, newest first, for /tfl clientdiag.
+function MF:BuildsHeardText()
+    local count, order = {}, {}
+    for _, b in pairs(builds) do
+        if not count[b] then count[b] = 0 order[#order + 1] = b end
+        count[b] = count[b] + 1
+    end
+    table.sort(order, function(a, b) return a > b end)
+    for i, b in ipairs(order) do order[i] = b .. " x" .. count[b] end
+    return #order > 0 and table.concat(order, ", ") or "none yet"
+end
 
 MF:On("TFL_LOGIN", function(self)
     if C_Timer and C_Timer.After then C_Timer.After(8, function() Notice(self) end) else Notice(self) end
@@ -54,6 +98,7 @@ function MF:WorldProbeLines()
     Line("key", Show(self.worldKey) .. " | sent as " .. Show(self.worldCode) .. " | " .. (self.WorldLabel and self:WorldLabel() or "?") .. " | saved data holds " .. Show(self.db and self.db.world)
         .. " | parked " .. Show(self.db and self.db.worlds and (function() local n = {} for k in pairs(self.db.worlds) do n[#n + 1] = k end table.sort(n) return table.concat(n, " ") end)() or "")
         .. " | other-world messages dropped " .. tostring(self.otherWorldsHeard or 0))
+    Line("builds", "mine " .. tostring(Mine()) .. " | heard this session: " .. self:BuildsHeardText())
     Line("region", Call("GetCurrentRegion") .. " | name " .. Call("GetCurrentRegionName"))
     Line("realm name", Call("GetRealmName") .. " | normalized " .. Call("GetNormalizedRealmName")
         .. " | id " .. Call("GetRealmID") .. " | kept " .. Show(self.cdb and self.cdb.realm))
