@@ -33,9 +33,9 @@ test("a message on the upstream prefix is ignored; the same message on ours is h
     local c = Client()
     local heard = 0
     c.handlers.TESTPING = function() heard = heard + 1 end
-    c:Fire("CHAT_MSG_ADDON", UPSTREAM_PREFIX, "LIVE1~1~TESTPING~1", "WHISPER", "Peer")
+    c:Fire("CHAT_MSG_ADDON", UPSTREAM_PREFIX, "LIVE2~1~?~TESTPING~1", "WHISPER", "Peer")
     assert(heard == 0, "handled a message from the upstream network")
-    c:Fire("CHAT_MSG_ADDON", c.PREFIX, "LIVE1~1~TESTPING~1", "WHISPER", "Peer")
+    c:Fire("CHAT_MSG_ADDON", c.PREFIX, "LIVE2~1~?~TESTPING~1", "WHISPER", "Peer")
     assert(heard == 1, "did not handle a message on its own prefix")
 end)
 

@@ -6,6 +6,24 @@ CurseForge. This build only sees anglers who run the test build.
 Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
 X-Build line in the toc and shows in the journal title and diagnostics.
 
+Build 8 - one world at a time
+- The addon now knows which region and rule set the character is on (for
+  example "Americas & Oceania, PvP"). The game says so through
+  GetCurrentRegion() and the PvPRuleset, RPRuleset and HardcoreRuleset game
+  rules; realm names are blank on Forever and are not used.
+- Shared data (records, standings, events, pools, anglers seen, sync reports)
+  is kept per world. Logging in on a character from another world swaps that
+  world's data in and sets the other aside. Settings and each character's own
+  journal are unaffected. On first run the existing data is taken to belong
+  to the world of the first character that logs in.
+- Every message carries the world, and messages from another world are
+  dropped (counted in /tfl diag). This changes the message envelope from
+  LIVE1 to LIVE2, so builds before 8 and builds from 8 on cannot hear each
+  other.
+- The login line says which world you are on. Code: World.lua.
+- Only tested on one PvP character so far. Normal, Roleplay and Hardcore are
+  read from the game rule names and still need confirming in game.
+
 Build 7 - world probe, second pass
 - The probe also lists game modes, the Forever experience preset, every game
   rule name, the values of the active rules, and whether chat channels are

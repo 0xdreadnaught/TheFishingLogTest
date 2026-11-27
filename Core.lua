@@ -744,6 +744,7 @@ local function InitDB()
         db.settings.invitesFromAnyone = true
         db.invitesOpenDefault = 1
     end
+    if db.world == nil and MF.worldKey and MF.worldKey ~= "?" then db.world = MF.worldKey end
     DetectSaving(db)
     MF.db = db
 
@@ -766,6 +767,7 @@ local function InitDB()
     cdb.history = cdb.history or {}
     cdb.caughtIn = cdb.caughtIn or {} -- itemID -> zone -> { c, b, s, spot }
     cdb.gear = cdb.gear or {}
+    if cdb.world == nil and MF.worldKey and MF.worldKey ~= "?" then cdb.world = MF.worldKey end
     MF.cdb = cdb
 end
 
@@ -809,6 +811,7 @@ end
 MF:On("ADDON_LOADED", function(self, name)
     if name ~= ADDON then return end
     self:DiscardExpiredBetaData()
+    if self.EnterWorld then self:EnterWorld() end -- World.lua: swap in this world's shared data
     InitDB()
     self:Fire("TFL_INIT")
     C_Timer.NewTicker(1, function()

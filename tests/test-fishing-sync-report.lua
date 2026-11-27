@@ -35,7 +35,7 @@ local function test(name,fn)
     if ok then print("PASS: "..name) else failures=failures+1;print("FAIL: "..name..": "..tostring(err)) end
 end
 local function receive(c,peer,payload)
-    c:Fire("CHAT_MSG_ADDON","FishingLogTest","LIVE1~1~"..payload,"WHISPER",peer)
+    c:Fire("CHAT_MSG_ADDON","FishingLogTest","LIVE2~1~?~"..payload,"WHISPER",peer)
 end
 local function entry(key,id,weight,holder)
     return table.concat({key,id,weight,holder,1800000000,0,1,key,0,0,"H"},",")
@@ -133,7 +133,7 @@ end)
 
 test("out-of-order incoming parts delay completion and duplicates do not duplicate records",function()
     local c=Client();receive(c,"Peer","RACK1~1~1~1~1.1.4")
-    local payload="LIVE1~1~RBOOK~"..entry("a1",1001,9,"Holder")
+    local payload="LIVE2~1~?~RBOOK~"..entry("a1",1001,9,"Holder")
     local parts={payload:sub(1,25),payload:sub(26)}
     local function part(i) c:Fire("CHAT_MSG_ADDON","FishingLogTest","P~1~"..i.."~2~"..parts[i],"WHISPER","Peer") end
     part(2);finish(c)
@@ -145,7 +145,7 @@ end)
 
 test("expired incoming transfers finish as incomplete",function()
     local c=Client()
-    c:Fire("CHAT_MSG_ADDON","FishingLogTest","P~8~1~2~LIVE1~1~RBOOK~a1,1001,9","WHISPER","Peer")
+    c:Fire("CHAT_MSG_ADDON","FishingLogTest","P~8~1~2~LIVE2~1~?~RBOOK~a1,1001,9","WHISPER","Peer")
     finish(c,121);assert(c:ActiveSyncReport(),"partial transfer was reported complete")
     for _=1,60 do c.pruneTransfers(c) end
     finish(c)
@@ -213,8 +213,8 @@ end)
 
 test("ordinary live broadcasts and wrong-generation fragments do not open sync alerts",function()
     local c=Client();c.handlers.FWOBS1=function() end
-    c:Fire("CHAT_MSG_ADDON","FishingLogTest","LIVE1~1~FWOBS1~1","GUILD","Peer")
-    c:Fire("CHAT_MSG_ADDON","FishingLogTest","P~1~1~2~LIVE1~2~RBOOK~a1","WHISPER","Peer")
+    c:Fire("CHAT_MSG_ADDON","FishingLogTest","LIVE2~1~?~FWOBS1~1","GUILD","Peer")
+    c:Fire("CHAT_MSG_ADDON","FishingLogTest","P~1~1~2~LIVE2~2~?~RBOOK~a1","WHISPER","Peer")
     c:Fire("CHAT_MSG_ADDON","FishingLogTest","P~2~1~2~RBOOK~a1","WHISPER","Peer")
     assert(#c.toasts==0 and not c:ActiveSyncReport())
 end)

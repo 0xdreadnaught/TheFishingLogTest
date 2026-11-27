@@ -8,6 +8,7 @@ local function Notice(self)
     self:Print(("|cffff8040TEST BUILD%s - not the main addon.|r It only sees anglers who run the test "
         .. "build and keeps its own saved data. The main addon is The Fishing Log on CurseForge.")
         :format(build and build ~= "" and (" " .. build) or ""))
+    if self.WorldLabel then self:Print("You are on " .. self:WorldLabel() .. ". Records, standings and events shown are this world's only.") end
 end
 MF.TestBuildNotice = Notice
 
@@ -50,6 +51,9 @@ function MF:WorldProbeLines()
     end
     local function Line(label, text) out[#out + 1] = "World " .. label .. ": " .. text end
 
+    Line("key", Show(self.worldKey) .. " | " .. (self.WorldLabel and self:WorldLabel() or "?") .. " | saved data holds " .. Show(self.db and self.db.world)
+        .. " | parked " .. Show(self.db and self.db.worlds and (function() local n = {} for k in pairs(self.db.worlds) do n[#n + 1] = k end table.sort(n) return table.concat(n, " ") end)() or "")
+        .. " | other-world messages dropped " .. tostring(self.otherWorldsHeard or 0))
     Line("region", Call("GetCurrentRegion") .. " | name " .. Call("GetCurrentRegionName"))
     Line("realm name", Call("GetRealmName") .. " | normalized " .. Call("GetNormalizedRealmName")
         .. " | id " .. Call("GetRealmID") .. " | kept " .. Show(self.cdb and self.cdb.realm))

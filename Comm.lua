@@ -127,7 +127,7 @@ local function Enqueue(dist, target, msg, priority)
         end
         table.insert(queue, at, item)
     end
-    if GetServerTime()>=MF.FRESH_START then msg=strjoin(SEP,"LIVE1",MF.FRESH_START,msg) end
+    if GetServerTime()>=MF.FRESH_START then msg=strjoin(SEP,"LIVE2",MF.FRESH_START,MF.worldKey or "?",msg) end
     if #msg <= MAX_LEN then
         local item = { dist = dist, target = target, msg = msg }
         Insert(item)
@@ -148,7 +148,7 @@ end
 function MF:BountySyncPending()
     for _, item in ipairs(queue) do
         local kind = item.msg:match("^([^~]+)")
-        if kind=="LIVE1" then local _,_,body=strsplit(SEP,item.msg,3) kind=body and body:match("^([^~]+)") end
+        if kind=="LIVE2" then local _,_,_,body=strsplit(SEP,item.msg,4) kind=body and body:match("^([^~]+)") end
         if kind == "BREQ2" or kind == "BREQ4" or kind == "QBASK1" then return true end
     end
     return false
@@ -516,8 +516,8 @@ local partial = {}   -- sender#id -> { n, got, parts, at, lastAt }
 local finished = {}  -- sender#id -> GetTime(), so channel+group copies run once
 
 function MF:CommunicationStatus()
-    return ("%d packets queued; %d transfers receiving; %d completed; %d expired"):format(
-        #queue, self.Count(partial), self.transfersCompleted or 0, self.transfersExpired or 0)
+    return ("%d packets queued; %d transfers receiving; %d completed; %d expired; %d dropped from other worlds"):format(
+        #queue, self.Count(partial), self.transfersCompleted or 0, self.transfersExpired or 0, self.otherWorldsHeard or 0)
 end
 
 function MF:SyncTransfersPending()
@@ -529,11 +529,13 @@ function MF:SyncTransfersPending()
 end
 
 local function Dispatch(self, sender, text)
-    local envelope,epoch,body=strsplit(SEP,text,3)
+    local envelope,epoch,world,body=strsplit(SEP,text,4)
     if GetServerTime()>=self.FRESH_START then
-        if envelope~="LIVE1" or tonumber(epoch)~=self.FRESH_START or not body then return end
+        if envelope~="LIVE2" or tonumber(epoch)~=self.FRESH_START or not body then return end
+        -- Another region or rule set (World.lua): not ours to hear. Counted for /tfl diag.
+        if world~=(self.worldKey or "?") then self.otherWorldsHeard=(self.otherWorldsHeard or 0)+1 return end
         text=body
-    elseif envelope=="LIVE1" then return end
+    elseif envelope=="LIVE1" or envelope=="LIVE2" then return end
     self:NoteSeen(sender)
     local fields = { strsplit(SEP, text) }
     local kind = table.remove(fields, 1)
@@ -580,11 +582,12 @@ local function Reassemble(self, sender, rest)
         -- abandoned transfer alive. A throttled map sync can exceed 120s.
         buf.lastAt = GetTime()
         if i == 1 and self.IsSyncKind then
-            local first, epoch, body = strsplit(SEP, part, 3)
+            local first, epoch, world, body = strsplit(SEP, part, 4)
             buf.kindKnown = true
             if GetServerTime() >= self.FRESH_START then
-                first = first == "LIVE1" and tonumber(epoch) == self.FRESH_START and body and body:match("^([^~]+)")
-            elseif first == "LIVE1" then first = nil end
+                first = first == "LIVE2" and tonumber(epoch) == self.FRESH_START and world == (self.worldKey or "?")
+                    and body and body:match("^([^~]+)")
+            elseif first == "LIVE1" or first == "LIVE2" then first = nil end
             if first and self:IsSyncKind(first) then buf.syncKind, buf.sender, buf.road = first, sender, self.lastRoad end
         end
         if buf.syncKind then self:SyncPacketStarted(sender, self.lastRoad, "in", buf.syncKind) end

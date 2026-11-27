@@ -14,6 +14,7 @@ Based on 1.1.4. The full notes are in [CHANGES.txt](CHANGES.txt).
 - Record sync fixes. Whisper replies go back to whoever asked, record books pass along records held by people who are offline, and large transfers time out properly.
 - A sync report that opens after a sync and shows what came in.
 - Its own message prefix and channel, which is why it can't see the main addon.
+- It knows which region and rule set your character is on, and keeps each one's records, bounties and events apart. Messages from another region or rule set are ignored.
 - A chat message at login saying it's the test build.
 
 ## Install
@@ -42,7 +43,7 @@ git diff 18e3680 HEAD -- . ':!tests' ':!README.md'
 
 The version line is still 1.1.4 on purpose. The build number is the `X-Build` line in the toc and it is never sent to other players.
 
-The network split is four constants: `MF.PREFIX` and `MF.CHANNEL` in `Comm.lua`, `PREFIX` in `Rework/RealmPage.lua`, and `MACRO_NAME` in `Storage.lua`. Message formats are the same as 1.1.4.
+The network split is four constants: `MF.PREFIX` and `MF.CHANNEL` in `Comm.lua`, `PREFIX` in `Rework/RealmPage.lua`, and `MACRO_NAME` in `Storage.lua`. Message formats are the same as 1.1.4 except the envelope. `LIVE1~<launch>~...` is now `LIVE2~<launch>~<world>~...`, where the world is something like `US-PvP`. That is `World.lua` plus the envelope lines in `Comm.lua`. The region comes from `GetCurrentRegion()` and the rule set from the `PvPRuleset`, `RPRuleset` and `HardcoreRuleset` game rules. I have only checked it on one PvP character.
 
 ## Tests
 

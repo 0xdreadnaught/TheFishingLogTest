@@ -177,7 +177,7 @@ test("multipart transfers stay alive while new parts arrive beyond two minutes",
     local got
     c.handlers.TEST=function(_,_,body) got=body end
     local body=("abcd"):rep(10000)
-    local payload="LIVE1~1~TEST~"..body
+    local payload="LIVE2~1~?~TEST~"..body
     local n=math.ceil(#payload/220)
     for i=1,n do
         now=now+1
@@ -191,7 +191,7 @@ test("duplicate fragments do not keep abandoned transfers alive",function()
     local c=Client("Receiver",false)
     assert(loadfile(source.."Comm.lua"))("TheFishingLogTest",c)
     local got=false;c.handlers.TEST=function() got=true end
-    local prefix="LIVE1~1~TEST~"
+    local prefix="LIVE2~1~?~TEST~"
     c:Fire("CHAT_MSG_ADDON","FishingLogTest","P~2~1~2~"..prefix,"WHISPER","Sender")
     for i=1,240 do
         now=now+1
@@ -210,7 +210,7 @@ test("out-of-order and duplicate chunks dispatch exactly once",function()
     assert(loadfile(source.."Comm.lua"))("TheFishingLogTest",c)
     local got,count=nil,0;c.handlers.TEST=function(_,_,body) got=body;count=count+1 end
     local body=("payload"):rep(100)
-    local payload="LIVE1~1~TEST~"..body
+    local payload="LIVE2~1~?~TEST~"..body
     local n=math.ceil(#payload/220)
     assert(n==4)
     for _,i in ipairs({4,2,2,1,3,1,2,3,4}) do
@@ -225,7 +225,7 @@ test("continuous slow transfers still have a hard lifetime bound",function()
     local got=false;c.handlers.TEST=function() got=true end
     for i=1,70 do
         for second=1,30 do now=now+1;for _,fn in ipairs(c.ticks) do fn(c) end end
-        c:Fire("CHAT_MSG_ADDON","FishingLogTest",strjoin("~","P",4,i,70,i==1 and "LIVE1~1~TEST~" or "x"),"WHISPER","Sender")
+        c:Fire("CHAT_MSG_ADDON","FishingLogTest",strjoin("~","P",4,i,70,i==1 and "LIVE2~1~?~TEST~" or "x"),"WHISPER","Sender")
     end
     assert(not got and c.transfersExpired>0)
 end)

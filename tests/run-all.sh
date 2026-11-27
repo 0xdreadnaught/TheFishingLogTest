@@ -7,7 +7,9 @@ cli=tests/lua-parser/node_modules/fengari-node-cli/src/lua-cli.js
 bad=0
 out=$(node tests/check-fishing-lua.cjs 2>&1); echo "$out"
 echo "$out" | grep -q '^PASS' || bad=1
-for t in sync sync-report sync-report-ui portrait isolation; do
+out=$(node tests/check-world-keys.cjs 2>&1); echo "$out"
+echo "$out" | grep -q '^PASS' || { bad=1; echo ">>> check-world-keys FAILED"; }
+for t in sync sync-report sync-report-ui portrait isolation world; do
   out=$(node "$cli" "tests/test-fishing-$t.lua" 2>&1); echo "$out"
   if echo "$out" | grep -qE '^FAIL|stack traceback' || ! echo "$out" | grep -q '^PASS'; then bad=1; echo ">>> test-fishing-$t FAILED"; fi
 done
