@@ -389,6 +389,17 @@ function MF:WorldProbeLines()
     Line("channel slots", "stated limit " .. tostring(MAX_WOW_CHAT_CHANNELS) .. " | joined now " .. tostring(ChannelsJoined())
         .. " | ours is " .. tostring(self.CHANNEL) .. ", number " .. tostring(JoinedNumber(self.CHANNEL or ""))
         .. " | locked names met " .. tostring(self.channelLocks or 0) .. " | password boxes closed " .. tostring(self.passwordBoxesClosed or 0))
+    local listening = {}
+    if type(GetFramesRegisteredForEvent) == "function" then
+        local ok, list = pcall(function() return { GetFramesRegisteredForEvent("CHANNEL_PASSWORD_REQUEST") } end)
+        for i = 1, ok and math.min(#list, 8) or 0 do
+            local f = list[i]
+            listening[#listening + 1] = type(f) == "table" and type(f.GetName) == "function" and f:GetName() or "unnamed"
+        end
+    end
+    Line("password request", "chat windows taken off it at the last join: " .. tostring(self.passwordEventQuieted)
+        .. " | listening now: " .. (type(GetFramesRegisteredForEvent) ~= "function" and "can't list"
+            or (#listening > 0 and table.concat(listening, " ") or "none")))
     Line("password box", "closed by " .. tostring(self.passwordBoxClosedBy) .. " | show hook " .. tostring(self.passwordBoxHook)
         .. " | StaticPopup_Visible gave " .. tostring(self.passwordBoxSeenAs)
         .. " | walker " .. type(StaticPopup_ForEachShownDialog) .. " | StaticPopup1 " .. type(StaticPopup1)

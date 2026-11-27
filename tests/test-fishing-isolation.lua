@@ -508,6 +508,64 @@ test("the password box is closed as it opens, on a client that only has the dial
     assert(ok, err)
 end)
 
+test("a refused join is silent: the game's chat window never hears the request, and gets its events back", function()
+    local names = { "GetChannelName", "JoinTemporaryChannel", "LeaveChannelByName", "StaticPopup1", "StaticPopup_Visible", "StaticPopup_Hide",
+        "ChatFrame1", "ChatFrame2", "NUM_CHAT_WINDOWS" }
+    local saved = {}
+    for _, n in ipairs(names) do saved[n] = _G[n] end
+    local ok, err = pcall(function()
+        local c = Client()
+        c.db.settings.channel = true
+        function c:Print() end
+        StaticPopup1, StaticPopup_Visible, StaticPopup_Hide = nil, nil, nil
+        NUM_CHAT_WINDOWS = 2
+        -- the game's chat windows: hearing the request opens the box, which makes its sound
+        local sounds, boxes = 0, {}
+        local function ChatWindow()
+            local f = { registered = { CHANNEL_PASSWORD_REQUEST = true } }
+            function f:IsEventRegistered(e) return self.registered[e] == true end
+            function f:RegisterEvent(e) self.registered[e] = true end
+            function f:UnregisterEvent(e) self.registered[e] = nil end
+            function f:GetScript() return function(_, _, name) sounds = sounds + 1; boxes[#boxes + 1] = name end end
+            return f
+        end
+        ChatFrame1, ChatFrame2 = ChatWindow(), ChatWindow()
+        local function request(name) -- the server asks for a password: every listener hears it
+            for _, f in ipairs({ ChatFrame1, ChatFrame2 }) do
+                if f.registered.CHANNEL_PASSWORD_REQUEST then f:GetScript()(f, "CHANNEL_PASSWORD_REQUEST", name) end
+            end
+            c:Fire("CHANNEL_PASSWORD_REQUEST", name)
+        end
+        local inside, asked = {}, {}
+        GetChannelName = function(name) return inside[name] or 0, name end
+        LeaveChannelByName = function(name) inside[name] = nil end
+        JoinTemporaryChannel = function(name)
+            asked[#asked + 1] = name
+            assert(not ChatFrame1.registered.CHANNEL_PASSWORD_REQUEST and not ChatFrame2.registered.CHANNEL_PASSWORD_REQUEST,
+                "the chat windows must be off the event before the join is asked")
+            if name == "TheFishingLogTest" then C_Timer.After(0, function() request(name) end) else inside[name] = 6 end
+        end
+        local function settle(seconds) for _ = 1, seconds do F.advance(1); F.flush(); for _, fn in ipairs(c.ticks) do fn(c) end end end
+
+        c.discoveryJoin = { attempts = 0, last = -math.huge, nextAt = 0, readyAt = 0 }
+        c:JoinChannel(true)
+        settle(3)
+        assert(table.concat(asked, ",") == "TheFishingLogTest,TheFishingLogTest2" and c.CHANNEL == "TheFishingLogTest2", table.concat(asked, ","))
+        assert(sounds == 0 and #boxes == 0, "the game's box was opened " .. sounds .. " time(s)")
+        assert(c.passwordEventQuieted == 2, tostring(c.passwordEventQuieted))
+        -- while the window is open, a request about the player's own channel still reaches a chat window, once
+        request("MyGuildChannel")
+        assert(sounds == 1 and boxes[1] == "MyGuildChannel", "the player's own password request was swallowed")
+        -- and a few seconds later the chat windows are listening again
+        settle(8)
+        assert(ChatFrame1.registered.CHANNEL_PASSWORD_REQUEST and ChatFrame2.registered.CHANNEL_PASSWORD_REQUEST, "the chat windows were not given the event back")
+        request("AnotherChannel")
+        assert(sounds == 3, "after the window both chat windows hear it as before, got " .. sounds)
+    end)
+    for _, n in ipairs(names) do _G[n] = saved[n] end
+    assert(ok, err)
+end)
+
 test("world probe reports what the client says and survives a client that says nothing", function()
     local c = { listeners = {}, ADDON = "TheFishingLogTest", cdb = { realm = "Kept" } }
     function c:On(event, fn) self.listeners[event] = self.listeners[event] or {}; table.insert(self.listeners[event], fn) end

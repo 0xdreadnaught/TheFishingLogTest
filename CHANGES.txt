@@ -6,6 +6,18 @@ CurseForge. This build only sees anglers who run the test build.
 Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
 X-Build line in the toc and shows in the journal title and diagnostics.
 
+Build 22 - a refused join is silent
+- Tested in game on build 21: the password box no longer shows, but its
+  opening sound still played, because the game opened it and the addon
+  closed it in the same instant.
+- For five seconds after each join the addon asks for, the game's chat
+  windows are taken off the password-request event and the addon answers it:
+  a request about one of its own channels is handled without a box, and one
+  about a channel of yours is handed to the chat window as usual. The chat
+  windows get the event back afterwards. Build 21's hook stays as a net.
+- /tfl clientdiag has a "password request" line: how many chat windows were
+  taken off the event at the last join, and who is listening for it.
+
 Build 21 - the password box is actually closed
 - Tested in game on build 20: the move to the next channel name worked, but
   the game's password box stayed on screen until answered. Build 20 looked
