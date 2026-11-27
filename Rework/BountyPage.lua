@@ -14,6 +14,8 @@ local P = {}
 ns.BountyPage = P
 local LEFT_W = 360
 local MIN_LEFT_W = 300 -- test build: the poster narrows to this before the standings are squeezed
+local TOP_ROWS = 100   -- test build: the standings list the first this many, then your own row
+local PLACE_W = 36     -- the place column is at least this wide ("1st"), and grows with the longest place shown
 local KIND_LABEL = { day = "TODAY'S BOUNTY", week = "THIS WEEK'S BOUNTY", month = "THIS MONTH'S BOUNTY" }
 
 -- The fish behind a standing, on mouse-over: a haul's three weights, or a collection's species
@@ -79,8 +81,7 @@ local function StandingRow()
     r.name:SetWordWrap(false)
     r.score = W:Label(r, "GameFontHighlight")
     r.score:SetPoint("RIGHT", -10, 0)
-    r.xp = W:Label(r, "GameFontDisableSmall")
-    r.xp:SetPoint("RIGHT", r.score, "LEFT", -12, 0)
+    -- (Test build: no XP figure on the podium rows. "Podium pays" above the list says it once.)
     return r
 end
 
@@ -103,7 +104,6 @@ local function Fill(fr, it)
     fr.name:SetText(MF:ShortName(it.e.name))
     if me then fr.name:SetTextColor(1, 0.62, 0) else fr.name:SetTextColor(1, 1, 1) end
     fr.score:SetText(it.scoreText)
-    fr.xp:SetText(it.xp and ("+" .. it.xp .. " XP") or "")
     if me then
         fr.bg:SetColorTexture(1, 0.62, 0, 0.14)
     elseif it.place <= 3 then
@@ -112,7 +112,55 @@ local function Fill(fr, it)
     else
         fr.bg:SetColorTexture(1, 1, 1, it.index % 2 == 0 and 0.03 or 0)
     end
-    fr.name:SetWidth(math.max(80, (fr:GetWidth() or 300) - 50 - 150))
+    -- The place column is as wide as the longest place on the board; the name gets whatever the
+    -- place and the score leave.
+    local placeW = P.placeW or PLACE_W
+    fr.place:SetWidth(placeW)
+    fr.name:ClearAllPoints()
+    fr.name:SetPoint("LEFT", 10 + placeW + 4, 0)
+    fr.name:SetWidth(math.max(60, (fr:GetWidth() or 300) - (10 + placeW + 4) - (fr.score:GetStringWidth() or 60) - 10 - 12))
+end
+P.FillRow = Fill -- for the tests
+
+-- What a standings row shows as the score. A count is shown bare ("17", not "17 species" or
+-- "x17"): the bounty on the left already says what is being counted. Weights keep their unit.
+local function RowScore(kind, e)
+    local mode = MF:BountyFormat(kind)
+    if mode == "top3" or mode == "total" or mode == "heaviest" then
+        return MF:BountyScoreText(kind, e.weight, nil, e.specimen)
+    end
+    return tostring(math.floor(tonumber(e.weight) or 0))
+end
+
+-- The rows of the standings list from the sorted standings: the first TOP_ROWS, then your own
+-- row if you are further down. Returns the rows, how many anglers entered, and the width the
+-- place column needs for the longest place shown.
+function P:StandingItems(kind, standings)
+    local items, mine = {}, nil
+    local place, last = 0, nil
+    for i, e in ipairs(standings) do
+        if e.weight ~= last then place, last = i, e.weight end
+        if i <= TOP_ROWS then
+            items[#items + 1] = { kind = "row", h = 28, e = e, place = place, index = i, scoreText = RowScore(kind, e) }
+        elseif not mine and MF:IsMe(e.name) then
+            mine = { kind = "row", h = 28, e = e, place = place, index = i, scoreText = RowScore(kind, e) }
+        end
+    end
+    if mine then
+        items[#items + 1] = { kind = "note", h = 18, text = "..." }
+        items[#items + 1] = mine
+    end
+    local widest = PLACE_W
+    local measure = self.measure
+    for _, it in ipairs(items) do
+        if it.kind == "row" and it.place > 3 then
+            local text = "#" .. it.place
+            local w = PLACE_W
+            if measure then measure:SetText(text) w = math.ceil(measure:GetStringWidth() or 0) + 2 end
+            if w > widest then widest = w end
+        end
+    end
+    return items, #standings, widest
 end
 
 -- A haul slot's frame in its fish's grade colour (orange for a specimen); gold when empty or ungraded
@@ -251,6 +299,8 @@ function P:Build(frame)
     self.payout:SetPoint("TOPLEFT", 4, -30)
     self.payout:SetPoint("TOPRIGHT", -4, -30)
     self.payout:SetJustifyH("LEFT")
+    self.measure = W:Label(right, "GameFontNormal") -- never shown: measures the longest place for the column
+    self.measure:Hide()
 
     -- Your last result and the last winner sit at the foot of the poster, so
     -- the standings run the whole height of the page however long they get.
@@ -401,14 +451,9 @@ function P:Refresh(state)
     end
 
     -- Standings
-    local items = {}
     local rewards = MF.BOUNTY_REWARDS and MF.BOUNTY_REWARDS[kind] or {}
-    local place, last = 0, nil
-    for i, e in ipairs(has and MF:BountyStandings(kind) or {}) do
-        if e.weight ~= last then place, last = i, e.weight end
-        items[#items + 1] = { kind = "row", h = 28, e = e, place = place, index = i, xp = rewards[place],
-            scoreText = MF:BountyScoreText(kind, e.weight, nil, e.specimen) }
-    end
+    local items, entered, placeW = self:StandingItems(kind, has and MF:BountyStandings(kind) or {})
+    self.entered, self.placeW = entered, placeW
     if #items == 0 then items[1] = { kind = "note", h = 60, text = has and "No entries yet. The podium is empty." or "" } end
     self.items = items
     self.list:SetItems(items, true)
@@ -468,8 +513,7 @@ J:AddPage({
         return ""
     end,
     count = function()
-        local n = 0
-        for _, it in ipairs(P.items or {}) do if it.kind == "row" then n = n + 1 end end
+        local n = P.entered or 0
         local text = n == 1 and "1 angler entered" or (n .. " anglers entered")
         if n > 0 and P.kind and Detailed(MF:BountyFormat(P.kind)) then text = text .. "  |cff858585- hover a name for their fish|r" end
         return text

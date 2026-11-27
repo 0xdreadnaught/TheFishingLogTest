@@ -218,4 +218,44 @@ assert(B.slots[1].points[1][4]==-90 and B.slots[3].points[1][4]==90,"haul slots 
 assert(posterWidth(718)==359 and posterWidth(1100)==360,"wide page: poster back to its normal width")
 assert(B.slots[1].points[1][4]==-104)
 print("PASS: page heading centred under the title; bounty poster narrows with the page")
+
+-- Standings rows: no XP on the podium rows, bare counts, a place column that fits the longest
+-- place, and a cut after the first 100 with your own row kept.
+local P=MF.Rework.BountyPage
+local mode="species"
+function MF:BountyFormat() return mode end
+function MF:BountyScoreText(_,score,_,specimen) return score.." lb"..(specimen and " *" or "") end
+function MF:IsMe(name) return name=="Me" end
+local function board(n,me)
+    local list={}
+    for i=1,n do list[i]={name=(i==me and "Me" or "Angler"..i),weight=n-i+1} end
+    return list
+end
+local items,entered,placeW=P:StandingItems("day",board(16))
+assert(#items==16 and entered==16 and placeW==36,"a short board keeps the narrow place column")
+assert(items[1].scoreText=="16" and items[1].xp==nil,"a count is shown bare and podium rows carry no XP: "..items[1].scoreText)
+mode="count";assert(P:StandingItems("day",board(3))[1].scoreText=="3","no x prefix either")
+mode="heaviest";assert(P:StandingItems("day",{{name="A",weight=7,specimen=true}})[1].scoreText=="7 lb *","weights keep their unit")
+mode="species"
+-- ties share a place
+items=P:StandingItems("day",{{name="A",weight=9},{name="B",weight=7},{name="C",weight=7},{name="D",weight=6}})
+assert(items[2].place==2 and items[3].place==2 and items[4].place==4)
+-- 5,000 entered, you are 4,321st: 100 rows, a gap, then you; the column fits "#4321"
+items,entered,placeW=P:StandingItems("day",board(5000,4321))
+assert(#items==102 and entered==5000,"expected 100 rows, a gap and your row, got "..#items)
+assert(items[100].place==100 and items[101].kind=="note" and items[102].e.name=="Me" and items[102].place==4321)
+assert(placeW==36,"#4321 still fits the narrow column, got "..placeW)
+items,entered,placeW=P:StandingItems("day",board(20000,15000))
+assert(items[102].place==15000 and placeW==#"#15000"*6+2,"place column grows to fit the longest place shown, got "..placeW)
+-- inside the top 100 you are just one of the rows
+items=P:StandingItems("day",board(5000,12));assert(#items==100 and items[12].e.name=="Me")
+-- a place in the millions still gets its room, and the name gives way
+items,entered,placeW=P:StandingItems("day",{{name="Me",weight=1}});items[1].place=2345678
+P.placeW=#"#2345678"*6+2
+local row=P.StandingRow();row:SetSize(240,28);row.item=items[1]
+P.FillRow(row,items[1])
+assert(row.xp==nil and row.place:GetText()=="#2345678" and row.place:GetWidth()==P.placeW)
+assert(row.name.points[1][2]==10+P.placeW+4,"the name starts after the place column")
+assert(row.name:GetWidth()==240-(10+P.placeW+4)-6-22,"the name takes what is left, got "..row.name:GetWidth())
+print("PASS: standings rows - bare counts, no podium XP, place column fits, top 100 plus your row")
 print("PASS: fishing outfit preservation, weapon slots, delayed models, refresh events, rank/XP, camera, and journal integration")

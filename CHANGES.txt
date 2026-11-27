@@ -6,6 +6,18 @@ CurseForge. This build only sees anglers who run the test build.
 Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
 X-Build line in the toc and shows in the journal title and diagnostics.
 
+Build 12 - bounty standings tidied
+- Podium rows no longer repeat the XP they pay. "Podium pays ..." above the
+  list already says it.
+- A count is shown bare: "17", not "17 species" or "x17". The bounty beside
+  it says what is being counted. Weights keep their unit. Only the standings
+  rows changed; other places that quote a score still spell it out.
+- The place column is as wide as the longest place shown instead of a fixed
+  36, so "#15000" is not cut off, and the name takes the room that is left.
+- The list shows the first 100 places, then your own row if you are further
+  down. The count under the list is still everyone who entered. The cutoff is
+  TOP_ROWS in Rework/BountyPage.lua.
+
 Build 11 - layout fixes, and a logbook rule that differs from 1.1.4
 - DIFFERS FROM THE ORIGINAL: a water is listed for a log only if a fish was
   landed there. 1.1.4 lists every water you stood in or passed through while
