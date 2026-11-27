@@ -1,9 +1,10 @@
 ## Interface: 16001
-## Title: The Fishing Log
+## Title: The Fishing Log (Test)
 ## Category: Professions
 ## Notes: Location-based fishing: solo logs, live matches, spot records, bounties and an angler's journal.
 ## Author: Jake (new look based on Godfall's UI Rework, MIT)
 ## Version: 1.1.4
+## X-Build: 1
 ## SavedVariables: TheFishingLogDB, TheFishingLogDiscord, AnglersLodgeDB
 ## SavedVariablesPerCharacter: TheFishingLogChar
 ## IconTexture: Interface\Icons\Trade_Fishing
@@ -87,6 +88,7 @@ FishingFinds.lua
 Rework\Core.lua
 Rework\Widgets.lua
 Rework\Panels.lua
+Rework\AnglerPortrait.lua
 Rework\Journal.lua
 Rework\Nav.lua
 Rework\Collection.lua

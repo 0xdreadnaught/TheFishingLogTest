@@ -21,7 +21,7 @@ local host = CreateFrame("Frame")
 host:Hide()
 
 local ROW_H, FEATURED_H, HEADER_H, SPACER_H = 22, 26, 30, 10
-local MIN_W, MIN_H, MAX_W, MAX_H = 760, 500, 1400, 1200
+local MIN_W, MIN_H, MAX_W, MAX_H = 1140, 560, 1400, 1200
 local CONTENT_TOP = -60
 -- Our rows use a 12pt font where The Fishing Log's used 10pt. It wraps its notes to fit the width it
 -- thinks it has, so it is told it has a little less room than we really do.
@@ -480,7 +480,7 @@ end
 
 function J:ApplySize(reset)
     if not f then return end
-    local w = math.max(MIN_W, math.min(MAX_W, ns.db.journalW or 900))
+    local w = math.max(MIN_W, math.min(MAX_W, ns.db.journalW or 1140))
     local h = math.max(MIN_H, math.min(MAX_H, ns.db.journalH or 620))
     f:SetSize(w, h)
     if reset or not ns.db.journalPos then
@@ -491,7 +491,18 @@ function J:ApplySize(reset)
         f:ClearAllPoints()
         f:SetPoint(p[1], UIParent, p[2], p[3], p[4])
     end
+    self:LayoutWorkspace()
     self:SyncHost()
+end
+
+-- The angler stays visible on every page. Reserve one third of the usable
+-- width for the character and two thirds for the existing page renderers.
+function J:LayoutWorkspace()
+    if not (f and f.angler) then return end
+    local width = math.floor((f:GetWidth() - 48) / 3)
+    f.angler:SetWidth(width)
+    f.heading:ClearAllPoints()
+    f.heading:SetPoint("TOPLEFT", f, "TOPLEFT", width + 32, -32)
 end
 
 -- Keep The Fishing Log's own window the right size for its notes to wrap to our width, and sitting
@@ -510,24 +521,10 @@ end
 
 function J:Build()
     if f then return f end
-    f = W:Window("AnglersLodgeJournal", "The Fishing Log", 780, 580, ns.ICON)
+    f = W:Window("AnglersLodgeJournal", "The Fishing Log", 1140, 620, ns.ICON)
     f:SetScale(ns.db.scale or 1)
     f:SetFrameStrata("HIGH")
     f.onMoved = SavePosition
-
-    -- Rank and experience, top right
-    f.rank = W:Label(f, "GameFontNormal")
-    f.rank:SetPoint("TOPRIGHT", -16, -30)
-    f.rank:SetJustifyH("RIGHT")
-    f.xp = W:Bar(f, 200, 12, 0.58, 0.0, 0.55)
-    f.xp:SetPoint("TOPRIGHT", -14, -45)
-    f.xp.text:SetFontObject("GameFontHighlightSmall")
-    f.xp:EnableMouse(true)
-    W:Tip(f.xp, "Angler rank", function()
-        local xp = MF.cdb.profile.xp or 0
-        local _, name, nextXP = MF:RankFor(xp)
-        return ("%s, %d XP%s"):format(name, xp, nextXP and ("\n%d XP to the next rank."):format(nextXP - xp) or "\nThe top of the ladder.")
-    end)
 
     -- (No header buttons: the options and board toggle that sat by the XP bar
     -- are removed. Settings are on the minimap button, /tfl options and
@@ -540,8 +537,13 @@ function J:Build()
     f.ground = ground
     W:HideTopCorners(ground) -- they sat right under the sub-page tabs
 
+    f.angler = ns.AnglerPortrait:Create(f)
+    f.angler:SetPoint("TOPLEFT", ground, "TOPLEFT", 12, -8)
+    f.angler:SetPoint("BOTTOMLEFT", ground, "BOTTOMLEFT", 12, 8)
+    f.rank, f.xp = f.angler.rank, f.angler.xp
+
     local body = CreateFrame("Frame", nil, f)
-    body:SetPoint("TOPLEFT", ground, "TOPLEFT", 12, -8)
+    body:SetPoint("TOPLEFT", f.angler, "TOPRIGHT", 16, 0)
     body:SetPoint("BOTTOMRIGHT", ground, "BOTTOMRIGHT", -12, 8)
     f.body = body
 
@@ -738,6 +740,8 @@ function J:Build()
         ns.db.journalW, ns.db.journalH = math.floor(f:GetWidth() + 0.5), math.floor(f:GetHeight() + 0.5)
         SavePosition()
         J:SyncHost()
+        J.lastSig = nil
+        J:Render()
     end)
 
     -- OnShow/OnHide also fire when the whole interface hides and returns (Alt-Z, cinematics):
@@ -758,6 +762,10 @@ function J:Build()
         if win and win:IsShown() and not J.closing then win:Hide() end
     end)
 
+    f:SetScript("OnSizeChanged", function()
+        J:LayoutWorkspace()
+        J.lastSig = nil
+    end)
     self:ApplySize()
     return f
 end
@@ -1071,16 +1079,7 @@ function J:Header()
         f.heading:SetText(TabLabel(key))
     end
     for _, b in ipairs(f.tabs) do PaintTab(b, b.key == key) end
-    local xp = MF.cdb and MF.cdb.profile and MF.cdb.profile.xp or 0
-    local idx, name, nextXP = MF:RankFor(xp)
-    f.rank:SetText(name or "")
-    local ladder = MF.Ladder and MF:Ladder()
-    local floor = ladder and ladder[idx] and ladder[idx].xp or 0
-    if nextXP then
-        f.xp:Set(xp - floor, nextXP - floor, ("%d / %d XP"):format(xp, nextXP))
-    else
-        f.xp:Set(1, 1, ("%d XP"):format(xp))
-    end
+    f.angler:RefreshRank()
 end
 
 -- The Fishing Log just drew a page: draw ours

@@ -1,0 +1,31 @@
+The Fishing Log (Test) - build 1
+
+The journal now keeps your character on the left third of the window. The
+existing pages use the right two thirds, with all six bottom tabs preserved.
+The window starts at 1140 x 620 and can be resized down to 1140 x 560.
+
+The preview starts from your live character and applies selected, saved
+fishing outfit pieces. Unchecked, unsaved, and saved-empty slots keep current
+gear, matching the wardrobe's equip behavior. A saved fishing pole clears the
+preview's off hand. The preview itself never equips or removes actual gear.
+Drag the character to turn, scroll to zoom, or use Reset view. Outfit opens
+the existing wardrobe. The preview refreshes when gear or outfit choices change.
+
+Realm position above the character uses the addon's all-time record standings,
+not the XP leaderboard or seasonal filter. These are the standings known from
+shared records; hover for that context. Angler title and purple XP progress
+appear below the character.
+
+Godfall's existing community theme, artwork, widgets, and MIT attribution are
+preserved. See LICENSE-UIRework.txt. This development build uses the existing
+saved data and remains dormant while the original TheFishingLog is enabled.
+
+Restart the client after installing this build to pick up the added Lua file.
+Enable The Fishing Log (Test) with the original The Fishing Log disabled.
+No data migration is needed.
+
+Validation: all 86 Lua files parse as Lua 5.1; TOC entries and load order checked.
+Mock-client checks cover outfit slot preservation, two-hand/off-hand behavior,
+delayed loading and failures, event refresh, rank/XP, camera controls, journal
+construction, bottom tabs, and workspace width. In-game rendering has not been
+visually tested for this build.

@@ -34,7 +34,7 @@ ns.defaults = {
     boardAlpha = 0.9,   -- the fishing board's background (0 = see-through, 1 = solid)
     feedRows = 6,       -- catches the board lists (3-8)
     toastHold = 5.5,    -- seconds an alert stays up
-    journalW = 900, journalH = 620,
+    journalW = 1140, journalH = 620,
     -- journalPos = { point, relPoint, x, y }
 }
 
