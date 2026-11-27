@@ -6,6 +6,18 @@ CurseForge. This build only sees anglers who run the test build.
 Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
 X-Build line in the toc and shows in the journal title and diagnostics.
 
+Build 15 - Goals page fits its column
+- The fish picker on the right was fixed at 380 wide, which left the goals
+  about 150: titles cut to "Lan...", the opening note running over the next
+  heading. The picker now takes 46% of the page (260 to 380) and its search
+  box and filters are sized to match; the fish icons re-flow to its width.
+- Notes are as tall as their text needs, so they no longer run into the
+  heading below.
+- A heading ("Suggested for you") stops at the note on its right ("from your
+  log") instead of running under it.
+- A tracked goal's title runs up to the Clear button. The short progress
+  ("2/5", "0.80 lb to go") moved from beside the title to the bottom line.
+
 Build 14 - page count centred; Frenzies filter row
 - The count at the foot of every page ("12 entries", "0 anglers entered",
   "3 waters") was in the bottom right corner, under the window's corner

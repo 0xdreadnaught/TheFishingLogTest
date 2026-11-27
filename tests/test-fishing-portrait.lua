@@ -314,4 +314,29 @@ win.actions[1]:SetWidth(120);win.actions[2]:SetWidth(120);count:SetText("12 entr
 assert(count.points[1][4]==math.floor((246+12)/2),"moves right of the buttons, got "..tostring(count.points[1][4]))
 win.actions[1]:Hide();win.actions[2]:Hide();count:SetText("3 waters");assert(count.points[1][4]==0)
 print("PASS: frenzy strip wording and slots; filter row fits its page; page count centred")
+
+-- Goals page: the fish picker gives the goals room, and nothing in a row runs under its neighbour.
+local goalsDef
+J.AddPage=function(self,def) if def.key=="goals" then goalsDef=def end;return realAdd(self,def) end
+load("Rework/GoalsPage.lua");J.AddPage=realAdd
+assert(goalsDef,"goals page did not register")
+local GP=MF.Rework.GoalsPage
+local gpage=CreateFrame("Frame");gpage:SetSize(563,400)
+goalsDef.build(gpage,MF)
+assert(GP.right:GetWidth()==260 and GP.leftW==563-4-260-20,"narrow page: picker at its minimum, goals get "..tostring(GP.leftW))
+assert(GP.filter[1]:GetWidth()+2+GP.filter[2]:GetWidth()+2+GP.filter[3]:GetWidth()+20<=260,"filters fit the picker")
+assert(GP.search:GetWidth()==150 and GP.list.points[2][4]==-20)
+gpage:SetSize(728,400);assert(GP.right:GetWidth()==334 and GP.filter[1]:GetWidth()==112)
+gpage:SetSize(1100,400);assert(GP.right:GetWidth()==380 and GP.search:GetWidth()==170,"wide page: the picker as it always was")
+gpage:SetSize(563,400)
+-- a note is as tall as its text needs at the width it has
+local intro=("x"):rep(140)
+assert(GP:NoteHeight(intro,279)>GP:NoteHeight(intro,500) and GP:NoteHeight("short",279)==24)
+assert(GP:NoteHeight(intro,279)>=math.ceil(140*5.6/263)*11+10)
+-- a tracked goal: the title runs to Clear, the progress is under the bar, the detail stops at it
+local grow=GP.GoalRow()
+assert(grow.title.points[2][2]==grow.clear and grow.title.points[2][4]==-8)
+assert(grow.right.points[1][2]==grow.bar and grow.right.points[1][3]=="BOTTOMRIGHT")
+assert(grow.sub.points[2][2]==grow.right and grow.sub.points[2][3]=="LEFT")
+print("PASS: goals page - picker narrows, notes sized to their text, goal row uses its width")
 print("PASS: fishing outfit preservation, weapon slots, delayed models, refresh events, rank/XP, camera, and journal integration")

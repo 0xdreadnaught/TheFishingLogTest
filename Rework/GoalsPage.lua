@@ -16,6 +16,8 @@ local GREEN = "|cff3ee63e"
 local MUTED = "|cff8f8f8f"
 local WHITE = "|cffffffff"
 local RIGHT_W = 380
+local MIN_RIGHT_W = 260 -- test build: the fish picker narrows to this so the goals beside it can be read
+local LIST_GAP = 20     -- between the goals list and the picker; the list's scroll bar sits in it
 local ICON_STEP = 34
 local ICONS_MAX = 16
 local GROUP_RANK = { ready = 1, higher = 2, unknown = 3, below = 4, enemy = 5 }
@@ -108,23 +110,28 @@ local function GoalRow()
     r.clear:SetPoint("TOPRIGHT", -8, -6)
     r.title = W:Label(r, "GameFontHighlight")
     r.title:SetPoint("TOPLEFT", r.icon, "TOPRIGHT", 8, 0)
-    r.title:SetPoint("RIGHT", r.clear, "LEFT", -90, 0)
+    -- Test build: the title runs up to the Clear button. The short progress ("2/5", "0.80 lb to
+    -- go") used to sit between them and left the title about 80 wide; it is on the bottom line now.
+    r.title:SetPoint("RIGHT", r.clear, "LEFT", -8, 0)
     r.title:SetJustifyH("LEFT")
     r.title:SetWordWrap(false)
-    r.right = W:Label(r, "GameFontNormalSmall")
-    r.right:SetPoint("RIGHT", r.clear, "LEFT", -8, 0)
     r.bar = W:Bar(r, 200, 10)
     r.bar:SetPoint("TOPLEFT", r.title, "BOTTOMLEFT", 0, -5)
     r.bar:SetPoint("RIGHT", -8, 0)
+    r.right = W:Label(r, "GameFontNormalSmall")
+    r.right:SetPoint("TOPRIGHT", r.bar, "BOTTOMRIGHT", 0, -4)
+    r.right:SetJustifyH("RIGHT")
     r.sub = W:Label(r, "GameFontDisableSmall")
     r.sub:SetPoint("TOPLEFT", r.bar, "BOTTOMLEFT", 0, -4)
-    r.sub:SetPoint("RIGHT", -8, 0)
+    r.sub:SetPoint("RIGHT", r.right, "LEFT", -8, 0)
     r.sub:SetJustifyH("LEFT")
     r.sub:SetWordWrap(false)
     Tip(r)
     r:SetScript("OnClick", function(self) if self.go then self.go() end end)
     return r
 end
+
+P.GoalRow = GoalRow -- for the tests
 
 local function SuggestRow()
     local r = CreateFrame("Button")
@@ -227,11 +234,17 @@ local function Make(kind)
     if kind == "icons" then return IconsRow() end
     local fr = CreateFrame("Frame")
     fr.text = W:Label(fr, kind == "note" and "GameFontDisableSmall" or "GameFontNormal")
-    fr.text:SetPoint("TOPLEFT", 8, kind == "note" and -4 or -10)
-    fr.text:SetPoint("TOPRIGHT", -8, kind == "note" and -4 or -10)
-    fr.text:SetJustifyH("LEFT")
     fr.right = W:Label(fr, "GameFontDisableSmall")
     fr.right:SetPoint("TOPRIGHT", -8, -11)
+    fr.text:SetPoint("TOPLEFT", 8, kind == "note" and -4 or -10)
+    if kind == "note" then
+        fr.text:SetPoint("TOPRIGHT", -8, -4)
+    else
+        -- Test build: a heading stops at the note on its right instead of running under it.
+        fr.text:SetPoint("RIGHT", fr.right, "LEFT", -6, 0)
+        fr.text:SetWordWrap(false)
+    end
+    fr.text:SetJustifyH("LEFT")
     if kind == "section" then
         fr.rule = W:Divider(fr, 100)
         fr.rule:SetPoint("BOTTOMLEFT", 0, 1)
@@ -341,8 +354,9 @@ function P:LeftItems()
     local goals = MF:FishingGoals()
     items[#items + 1] = { kind = "section", h = 32, text = "Your goals", right = ("%d of %d"):format(#goals, MF.MAX_FISHING_GOALS or 3) }
     if #goals == 0 then
-        items[#items + 1] = { kind = "note", h = 36, text = "Pick up to three: track a suggestion below, or choose a fish on the right. "
-            .. "Goals come from your catches, with no extra XP or weight bonuses." }
+        local text = "Pick up to three: track a suggestion below, or choose a fish on the right. "
+            .. "Goals come from your catches, with no extra XP or weight bonuses."
+        items[#items + 1] = { kind = "note", h = self:NoteHeight(text, self.leftW), text = text }
     end
     for i, g in ipairs(goals) do
         local where
@@ -462,7 +476,8 @@ function P:RightItems()
         for _, c in ipairs(choices) do items[#items + 1] = c end
         if #choices == 0 then items[#items + 1] = { kind = "note", h = 24, text = "Every goal for this fish is done or tracked." } end
     else
-        items[#items + 1] = { kind = "note", h = 30, text = "Choose a fish below for its goals: collect it, land a specimen, a monster, or beat your best here." }
+        local text = "Choose a fish below for its goals: collect it, land a specimen, a monster, or beat your best here."
+        items[#items + 1] = { kind = "note", h = self:NoteHeight(text, (self.rightW or RIGHT_W) - 24), text = text }
     end
     local ids = self:FishIDs()
     local filterName = ({ need = "still to catch", spec = "without a specimen", all = "in all" })[Prefs().filter or "need"]
@@ -470,8 +485,8 @@ function P:RightItems()
     if #ids == 0 then
         items[#items + 1] = { kind = "note", h = 24, text = (self.text or "") ~= "" and "No fish match that search." or "Nothing left here: try another filter." }
     end
-    -- The panel is a fixed width, so this doesn't wait on the list being laid out
-    local per = math.max(4, math.min(ICONS_MAX, math.floor((RIGHT_W - 40) / ICON_STEP)))
+    -- The panel's width is set by Layout, so this doesn't wait on the list being laid out
+    local per = math.max(4, math.min(ICONS_MAX, math.floor(((self.rightW or RIGHT_W) - 40) / ICON_STEP)))
     for i = 1, #ids, per do
         local row = {}
         for k = i, math.min(#ids, i + per - 1) do row[#row + 1] = ids[k] end
@@ -537,7 +552,46 @@ function P:Build(frame)
 
     self.list = W:VList(frame, Make, Fill)
     self.list:SetPoint("TOPLEFT", 0, -2)
-    self.list:SetPoint("BOTTOMRIGHT", right, "BOTTOMLEFT", -30, 0)
+    self.list:SetPoint("BOTTOMRIGHT", right, "BOTTOMLEFT", -LIST_GAP, 0)
+    self.measure = W:Label(frame, "GameFontDisableSmall") -- never shown: measures how tall a note is
+    self.measure:Hide()
+    frame:HookScript("OnSizeChanged", function() P:Layout() end) -- the journal redraws the page when a resize ends
+    self:Layout()
+end
+
+-- Test build: the page was drawn for the full width of the window, with the fish picker fixed
+-- at 380. Beside the character that left the goals about 150 wide: titles cut to "Lan...", the
+-- opening note running over the next heading. The picker now takes 46% of the page, between
+-- MIN_RIGHT_W and the 380 it always had, and its search box and filters are sized to match.
+-- Returns true when the widths changed.
+function P:Layout()
+    local frame, right = self.frame, self.right
+    if not (frame and right) then return end
+    local page = frame:GetWidth() or 0
+    if page <= 0 then return end
+    local w = math.max(MIN_RIGHT_W, math.min(RIGHT_W, math.floor(page * 0.46)))
+    local leftW = page - 4 - w - LIST_GAP
+    if w == self.rightW and leftW == self.leftW then return end
+    self.rightW, self.leftW = w, leftW
+    right:SetWidth(w)
+    self.search:SetWidth(math.max(110, math.min(170, w - 110)))
+    local widths = w >= 300 and { 112, 100, 60 } or { 100, 94, 40 }
+    for i, b in ipairs(self.filter) do b:SetWidth(widths[i]) end
+    self.leftSig, self.rightSig = nil, nil -- note heights and icons per row depend on the widths
+    return true
+end
+
+-- How tall a note needs to be to show all of `text` in a list `width` wide.
+function P:NoteHeight(text, width)
+    local room = math.max(60, (width or 300) - 16)
+    local measure, height = self.measure, nil
+    if measure and measure.GetStringHeight then
+        measure:SetWidth(room)
+        measure:SetText(text)
+        height = measure:GetStringHeight()
+    end
+    if not height or height <= 0 then height = math.ceil(#text * 5.6 / room) * 11 end -- no measuring: estimate
+    return math.max(24, math.ceil(height) + 10)
 end
 
 local function Signature(items)
@@ -554,6 +608,7 @@ function P:Refresh()
     if self.refreshing then return end
     self.refreshing = true
     local ok, err = pcall(function()
+        self:Layout()
         MF:CheckFishingGoals()
         if MF.goalFishSelected and MF.goalFishSelected ~= self.selected then self.selected = MF.goalFishSelected end
         local okZones, zones = pcall(MF.FinderZones, MF)
