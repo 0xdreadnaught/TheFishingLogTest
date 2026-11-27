@@ -54,7 +54,3 @@ bash tests/run-all.sh
 ```
 
 They can't tell you how anything looks or whether two real players sync. Nobody has confirmed two test builds finding each other in game yet.
-
-## Credit
-
-The Fishing Log is Jake's addon (that's the name in the toc). The original code is his. I'm not claiming it and this repo doesn't license it to anyone. The journal look comes from Godfall's UI Rework, which is MIT (`LICENSE-UIRework.txt`). Library licences are listed in `Libs/README.txt`.
