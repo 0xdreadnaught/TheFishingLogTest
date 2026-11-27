@@ -1,0 +1,107 @@
+## Interface: 16001
+## Title: The Fishing Log
+## Category: Professions
+## Notes: Location-based fishing: solo logs, live matches, spot records, bounties and an angler's journal.
+## Author: Jake (new look based on Godfall's UI Rework, MIT)
+## Version: 1.1.4
+## SavedVariables: TheFishingLogDB, TheFishingLogDiscord, AnglersLodgeDB
+## SavedVariablesPerCharacter: TheFishingLogChar
+## IconTexture: Interface\Icons\Trade_Fishing
+## AddonCompartmentFunc: TheFishingLog_OnAddonCompartmentClick
+## OptionalDeps: LibStub, LibDataBroker-1.1, HereBeDragons
+
+# Infrastructure first: everything below registers events and commands
+# with Core as it loads.
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\HereBeDragons\HereBeDragons-2.0.lua
+Locale.lua
+Core.lua
+Widgets.lua
+Fish.lua
+Geography.lua
+Spots.lua
+Comm.lua
+Compat.lua
+
+# Features. TFL_CATCH listeners run in this order: Profile, Session, Match.
+Catch.lua
+FrenzyLocations.lua
+Conditions.lua
+FrenzyPlanner.lua
+BountyFormats.lua
+BountyRewards.lua
+Profile.lua
+Storage.lua
+Records.lua
+DiscordExport.lua
+Season.lua
+Report.lua
+Census.lua
+Eligibility.lua
+AnglerNameplates.lua
+Value.lua
+Session.lua
+CastOutcomes.lua
+Fishing.lua
+Bobber.lua
+Outfit.lua
+Guide.lua
+CatchSkill.lua
+Match.lua
+MatchCues.lua
+Tooltip.lua
+Nearby.lua
+Goals.lua
+GoalTracker.lua
+Noticeboard.lua
+
+# Interface. Files that add a journal tab must load after Journal.lua.
+UI.lua
+Volume.lua
+LureMenu.lua
+Float.lua
+Journal.lua
+AnglingTools.lua
+Cards.lua
+CardShare.lua
+HigherLower.lua
+MapMarkers.lua
+MapPins.lua
+Libs\HereBeDragons\HereBeDragons-Pins-2.0.lua
+PoolAtlas.lua
+PoolPins.lua
+NoticeboardUI.lua
+HallOfFame.lua
+Recap.lua
+FreshStart.lua
+Welcome.lua
+News.lua
+Options.lua
+
+FishingFinder.lua
+FishingFinds.lua
+
+# The UI Rework (Godfall, MIT - see LICENSE-UIRework.txt). Last, so its
+# TFL_INIT listener runs after every frame above has been built.
+Rework\Core.lua
+Rework\Widgets.lua
+Rework\Panels.lua
+Rework\Journal.lua
+Rework\Nav.lua
+Rework\Collection.lua
+Rework\History.lua
+Rework\MapRevealData.lua
+Rework\WatersPage.lua
+Rework\RecordsPage.lua
+Rework\BountyPage.lua
+Rework\EventsPage.lua
+Rework\FrenzyPage.lua
+Rework\FinderPage.lua
+Rework\HerePage.lua
+Rework\GoalsPage.lua
+Rework\RealmPage.lua
+Rework\Toast.lua
+Rework\Board.lua
+Rework\Settings.lua
+Rework\Options.lua

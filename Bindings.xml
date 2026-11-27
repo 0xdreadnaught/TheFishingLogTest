@@ -1,0 +1,28 @@
+<Bindings>
+    <Binding name="THEFISHINGLOG_JOURNAL" header="THEFISHINGLOG" category="AddOns">
+        TheFishingLog:ToggleJournal()
+    </Binding>
+    <Binding name="THEFISHINGLOG_BOARD" category="AddOns">
+        TheFishingLog:ToggleBoard()
+    </Binding>
+    <Binding name="THEFISHINGLOG_SETTINGS" category="AddOns">
+        TheFishingLog:ToggleSettings()
+    </Binding>
+    <Binding name="THEFISHINGLOG_HERE" category="AddOns">
+        TheFishingLog:OpenFishingHere()
+    </Binding>
+    <Binding name="THEFISHINGLOG_FINDER" category="AddOns">
+        TheFishingLog:OpenAnglingTools("finder")
+    </Binding>
+    <Binding name="CLICK TheFishingLogLureButton:LeftButton" category="AddOns">
+    </Binding>
+    <Binding name="THEFISHINGLOG_LUREMENU" category="AddOns">
+        TheFishingLog:ToggleLureMenu()
+    </Binding>
+    <Binding name="THEFISHINGLOG_POLE" category="AddOns">
+        TheFishingLog:TogglePole()
+    </Binding>
+    <Binding name="THEFISHINGLOG_STOP" category="AddOns">
+        TheFishingLog:StopSession()
+    </Binding>
+</Bindings>
