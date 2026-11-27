@@ -6,6 +6,13 @@ CurseForge. This build only sees anglers who run the test build.
 Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
 X-Build line in the toc and shows in the journal title and diagnostics.
 
+Build 17 - /tfl channeltest
+- The addon assumes Forever refuses addon messages on custom chat channels
+  and never tries (Comm.lua, CUSTOM_CHANNEL_SUPPORTED = false). This command
+  tries once: one short message to the finder channel, then it reports what
+  the client answered and whether the message came back. Nothing is sent
+  unless you type it. /tfl clientdiag counts tests heard from other players.
+
 Build 16 - testers are told when their build is behind
 - WHO and HERE carry the sender's test build number as an extra last field.
   The first time you hear someone on a newer build, one chat line says so

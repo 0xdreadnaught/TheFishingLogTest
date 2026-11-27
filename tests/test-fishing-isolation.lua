@@ -142,6 +142,67 @@ test("WHO and HERE end with the build number, and a WHO or HERE without one is s
     assert(ok, err)
 end)
 
+test("/tfl channeltest sends exactly one message and reports refused, came back, or silent", function()
+    local saved = { CreateFrame, C_ChatInfo, GetChannelName, C_Timer, Enum, GetTime }
+    local ok, err = pcall(function()
+        local clock, frames, sent, timers = 1000, {}, {}, {}
+        GetTime = function() return clock end
+        CreateFrame = function()
+            local f = { events = {} }
+            function f:RegisterEvent(e) self.events[e] = true end
+            function f:SetScript(_, fn) self.handler = fn end
+            frames[#frames + 1] = f
+            return f
+        end
+        local function deliver(prefix, text, dist, sender)
+            for _, f in ipairs(frames) do if f.handler then f.handler(f, "CHAT_MSG_ADDON", prefix, text, dist, sender) end end
+        end
+        C_Timer = { After = function(_, fn) timers[#timers + 1] = fn end }
+        local function finish() local run = timers; timers = {}; for _, fn in ipairs(run) do fn() end end
+        Enum = { SendAddonMessageResult = { Success = 0, InvalidChannel = 4 } }
+        local joined, answer, echo = 0, 0, false
+        GetChannelName = function() return joined end
+        C_ChatInfo = { SendAddonMessage = function(prefix, msg, dist, target)
+            sent[#sent + 1] = { prefix = prefix, msg = msg, dist = dist, target = target }
+            if echo then deliver(prefix, msg, "CHANNEL", "Me") end
+            return answer
+        end }
+        local c, said, commands = { listeners = {}, ADDON = "TheFishingLogTest", PREFIX = "FishingLogTest", CHANNEL = "TheFishingLogTest" }, {}, {}
+        function c:On() end
+        function c:Print(msg) said[#said + 1] = msg end
+        function c:IsMe(name) return name == "Me" end
+        function c:Command(name, _, _, fn) commands[name] = fn end
+        assert(loadfile(source .. "TestBuild.lua"))("TheFishingLogTest", c)
+        assert(commands.channeltest, "command not registered")
+        local function try() said = {}; clock = clock + 60; commands.channeltest(c); finish(); return table.concat(said, " | ") end
+
+        local text = try()
+        assert(#sent == 0 and text:find("not in the TheFishingLogTest channel", 1, true), text)
+        joined = 6
+        answer = 4
+        text = try()
+        assert(#sent == 1 and sent[1].dist == "CHANNEL" and sent[1].target == 6 and sent[1].prefix == "FishingLogTest", "one send to our channel")
+        assert(sent[1].msg:find("^CHTEST~%d+$") and text:find("answered: 4 (InvalidChannel)", 1, true) and text:find("refused it", 1, true), text)
+        answer, echo = 0, true
+        text = try()
+        assert(#sent == 2 and text:find("(Success)", 1, true) and text:find("DO travel over a custom channel", 1, true), text)
+        echo = false
+        text = try()
+        assert(#sent == 3 and text:find("accepted it but nothing came back", 1, true), text)
+        -- typed twice in a row: the second is not sent
+        said = {}; commands.channeltest(c)
+        assert(#sent == 3 and said[1]:find("wait", 1, true), tostring(said[1]))
+        -- another player's test heard on the channel is counted; ours and other traffic are not
+        deliver("FishingLogTest", "CHTEST~123456", "CHANNEL", "Peer")
+        deliver("FishingLogTest", "CHTEST~123456", "CHANNEL", "Me")
+        deliver("FishingLogTest", "CHTEST~123456", "WHISPER", "Peer")
+        deliver("FishingLog", "CHTEST~123456", "CHANNEL", "Peer")
+        assert(c.channelTestsHeard == 1, tostring(c.channelTestsHeard))
+    end)
+    CreateFrame, C_ChatInfo, GetChannelName, C_Timer, Enum, GetTime = saved[1], saved[2], saved[3], saved[4], saved[5], saved[6]
+    assert(ok, err)
+end)
+
 test("world probe reports what the client says and survives a client that says nothing", function()
     local c = { listeners = {}, ADDON = "TheFishingLogTest", cdb = { realm = "Kept" } }
     function c:On(event, fn) self.listeners[event] = self.listeners[event] or {}; table.insert(self.listeners[event], fn) end

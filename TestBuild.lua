@@ -60,6 +60,73 @@ MF:On("TFL_LOGIN", function(self)
     if C_Timer and C_Timer.After then C_Timer.After(8, function() Notice(self) end) else Notice(self) end
 end)
 
+-- Can an addon message travel over a custom chat channel on Forever? The addon assumes not
+-- (Comm.lua, CUSTOM_CHANNEL_SUPPORTED = false) and never tries. /tfl channeltest tries once:
+-- one short message to our own finder channel, then reports what the client answered and
+-- whether the message came back to us, as a sender's own channel messages normally do.
+-- Nothing is sent unless the command is typed. Other test builds ignore the message.
+local channelTest = { at = -math.huge }
+function MF:ChannelSendTest()
+    local say = function(text) self:Print("Channel test: " .. text) end
+    local now = GetTime()
+    if now - channelTest.at < 30 then return say("wait a few seconds between tries.") end
+    local send = C_ChatInfo and C_ChatInfo.SendAddonMessage
+    if type(send) ~= "function" or type(GetChannelName) ~= "function" then return say("this client has no way to try.") end
+    local id = GetChannelName(self.CHANNEL)
+    if type(id) ~= "number" or id <= 0 then
+        return say("not in the " .. tostring(self.CHANNEL) .. " channel yet. Type /tfl sync, wait a minute and try again.")
+    end
+    channelTest.at = now
+    local nonce = tostring(math.random(100000, 999999))
+    local payload = "CHTEST~" .. nonce
+    local heard
+    if not channelTest.frame and CreateFrame then
+        channelTest.frame = CreateFrame("Frame")
+        channelTest.frame:RegisterEvent("CHAT_MSG_ADDON")
+        channelTest.frame:SetScript("OnEvent", function(_, _, prefix, text, dist)
+            if channelTest.listen and prefix == MF.PREFIX then channelTest.listen(text, dist) end
+        end)
+    end
+    channelTest.listen = function(text, dist) if text == payload then heard = tostring(dist) end end
+    local ok, result = pcall(send, self.PREFIX, payload, "CHANNEL", id)
+    local name
+    for key, value in pairs(type(Enum) == "table" and type(Enum.SendAddonMessageResult) == "table" and Enum.SendAddonMessageResult or {}) do
+        if value == result then name = key end
+    end
+    local accepted = ok and (result == nil or result == true or result == 0)
+    say(("sent one message to channel %d. The client answered: %s%s."):format(id,
+        ok and tostring(result) or ("ERROR " .. tostring(result)), name and (" (" .. name .. ")") or ""))
+    local function Verdict()
+        channelTest.listen = nil
+        if heard then
+            say("|cff3ee63eit came back on " .. heard .. ".|r Addon messages DO travel over a custom channel here.")
+        elseif not accepted then
+            say("|cffff8040the client refused it and nothing came back.|r Custom channels are closed to addon messages here.")
+        else
+            say("|cffffd100the client accepted it but nothing came back in 5 seconds.|r Either the server drops it quietly, "
+                .. "or senders don't hear their own. A second test-build player in the channel settles it: have them run this "
+                .. "and watch /tfl clientdiag for 'channel test heard'.")
+        end
+    end
+    if C_Timer and C_Timer.After then C_Timer.After(5, Verdict) else Verdict() end
+end
+if MF.Command then
+    MF:Command("channeltest", "Other", "/tfl channeltest - test build: can addon messages use the finder channel?",
+        function(self) self:ChannelSendTest() end)
+end
+-- Someone else's test arriving on the channel proves the route for everyone who hears it.
+do
+    local f = CreateFrame and CreateFrame("Frame")
+    if f then
+        f:RegisterEvent("CHAT_MSG_ADDON")
+        f:SetScript("OnEvent", function(_, _, prefix, text, dist, sender)
+            if prefix ~= MF.PREFIX or type(text) ~= "string" or dist ~= "CHANNEL" or not text:find("^CHTEST~%d+$") then return end
+            if MF.IsMe and type(sender) == "string" and MF:IsMe(sender) then return end
+            MF.channelTestsHeard = (MF.channelTestsHeard or 0) + 1
+        end)
+    end
+end
+
 -- Which world is this character in? Forever splits players by region and by rule set, and
 -- its realm-name calls answer "". This lists everything the client will say about it, so the
 -- right call can be picked from evidence. Read-only; shown by /tfl clientdiag.
@@ -98,6 +165,7 @@ function MF:WorldProbeLines()
     Line("key", Show(self.worldKey) .. " | sent as " .. Show(self.worldCode) .. " | " .. (self.WorldLabel and self:WorldLabel() or "?") .. " | saved data holds " .. Show(self.db and self.db.world)
         .. " | parked " .. Show(self.db and self.db.worlds and (function() local n = {} for k in pairs(self.db.worlds) do n[#n + 1] = k end table.sort(n) return table.concat(n, " ") end)() or "")
         .. " | other-world messages dropped " .. tostring(self.otherWorldsHeard or 0))
+    Line("channel test heard", tostring(self.channelTestsHeard or 0) .. " from other players this session")
     Line("builds", "mine " .. tostring(Mine()) .. " | heard this session: " .. self:BuildsHeardText())
     Line("region", Call("GetCurrentRegion") .. " | name " .. Call("GetCurrentRegionName"))
     Line("realm name", Call("GetRealmName") .. " | normalized " .. Call("GetNormalizedRealmName")
