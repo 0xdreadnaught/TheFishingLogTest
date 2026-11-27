@@ -124,10 +124,11 @@ local function MakeRow(kind)
             if h.outcomes and MF.CastOutcomeSummary then GameTooltip:AddLine(MF:CastOutcomeSummary(h), 1, 1, 1, true) end
             GameTooltip:AddDoubleLine("Fishing time", MF:FormatClock(h.duration or 0), 0.63, 0.63, 0.63, 1, 1, 1)
             if h.elapsed then GameTooltip:AddDoubleLine("Session length", MF:FormatClock(h.elapsed), 0.63, 0.63, 0.63, 1, 1, 1) end
-            if h.spots and #h.spots > 1 then
+            local waters = h.spots and (MF.FishedWaters and MF:FishedWaters(h.spots) or h.spots) -- no "0 fish" waters
+            if waters and #waters > 1 then
                 GameTooltip:AddLine(" ")
                 GameTooltip:AddLine("Waters fished", 1, 0.82, 0)
-                for _, e in ipairs(h.spots) do
+                for _, e in ipairs(waters) do
                     GameTooltip:AddDoubleLine(e.name or "?", ("%d fish, %s"):format(e.count or 0, MF:Weight(e.total or 0)),
                         1, 1, 1, 0.8, 0.8, 0.8)
                 end

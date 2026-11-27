@@ -101,6 +101,18 @@ function MF:SessionSpots(s)
         if a.count ~= b.count then return a.count > b.count end
         return a.seconds > b.seconds
     end)
+    return self:FishedWaters(list)
+end
+
+-- Test build: a water is part of a log only if a fish was landed there. The log also keeps
+-- time for every water you stood in or passed through while it ran, and the original lists
+-- those as well, as "0 fish". Used when a log is saved and wherever a saved log is shown,
+-- so logs saved before this are tidied on screen too. Order is kept.
+function MF:FishedWaters(spots)
+    local list = {}
+    for _, e in ipairs(spots or {}) do
+        if (e.count or 0) > 0 then list[#list + 1] = e end
+    end
     return list
 end
 

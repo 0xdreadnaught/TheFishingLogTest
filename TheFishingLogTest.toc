@@ -4,7 +4,7 @@
 ## Notes: TEST BUILD of The Fishing Log, not the main addon. It only sees anglers who run the test build. Disable the original while this is enabled.
 ## Author: Jake (new look based on Godfall's UI Rework, MIT)
 ## Version: 1.1.4
-## X-Build: 10
+## X-Build: 11
 ## SavedVariables: TheFishingLogDB, TheFishingLogDiscord, AnglersLodgeDB
 ## SavedVariablesPerCharacter: TheFishingLogChar
 ## IconTexture: Interface\Icons\Trade_Fishing

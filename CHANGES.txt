@@ -6,6 +6,22 @@ CurseForge. This build only sees anglers who run the test build.
 Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
 X-Build line in the toc and shows in the journal title and diagnostics.
 
+Build 11 - layout fixes, and a logbook rule that differs from 1.1.4
+- DIFFERS FROM THE ORIGINAL: a water is listed for a log only if a fish was
+  landed there. 1.1.4 lists every water you stood in or passed through while
+  the log ran, as "0 fish, 0.00 lb" (the log keeps time per water, and that
+  creates the entry). This applies to the "Waters fished" tooltip in the
+  logbook, the session report, the "By spot" view, "and N other waters" on
+  the board, and what a finished log saves. Logs saved earlier are filtered
+  when shown; their saved data is not rewritten. Junk or a find alone does
+  not count. Code: MF:FishedWaters in Session.lua.
+- The page heading (Journal, Waters, Bounty...) is centred under the window
+  title instead of starting a third of the way across.
+- Bounty page: the standings no longer run out of the window. The poster
+  narrows with the page (300 to 360 wide), "Podium pays 150 / 100 / 50 XP"
+  has its own line under the Standings heading, and the "No entries yet"
+  note wraps.
+
 Build 10 - the world is sent as one character
 - Builds 8 and 9 put the world's name ("US-PvP") on every message. It is now
   one number, (region - 1) * 8 + rule-set bits (1 PvP, 2 Roleplay,

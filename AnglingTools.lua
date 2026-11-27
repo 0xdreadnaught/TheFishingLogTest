@@ -231,8 +231,9 @@ function MF:SessionReportText(h,short)
         if h.elapsed then out[#out+1]="Elapsed session time: " .. self:FormatClock(h.elapsed) end
         out[#out+1]=""
         out[#out+1]="**Waters fished**"
-        if h.spots and #h.spots>0 then
-            for _,s in ipairs(h.spots) do
+        local waters=h.spots and (self.FishedWaters and self:FishedWaters(h.spots) or h.spots) -- no "0 fish" waters
+        if waters and #waters>0 then
+            for _,s in ipairs(waters) do
                 out[#out+1]=("- %s: %d fish / %s"):format(Plain(s.name),s.count or 0,self:Weight(s.total or 0))
             end
         else out[#out+1]="- " .. Plain(h.sub or "Location unavailable") end

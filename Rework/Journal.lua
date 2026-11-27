@@ -501,8 +501,19 @@ function J:LayoutWorkspace()
     if not (f and f.angler) then return end
     local width = math.floor((f:GetWidth() - 48) / 3)
     f.angler:SetWidth(width)
+    self:PlaceHeading()
+end
+
+-- The page heading and the small note beside it read as one line, centred under the window
+-- title. The title sits in the bar between the portrait and the close button, which is the
+-- strip the drag handle covers, so that is what the heading is centred on.
+function J:PlaceHeading()
+    if not (f and f.heading) then return end
+    local width = f.heading:GetStringWidth() or 0
+    local note = f.subheading and f.subheading:GetText()
+    if note and note ~= "" then width = width + 10 + (f.subheading:GetStringWidth() or 0) end
     f.heading:ClearAllPoints()
-    f.heading:SetPoint("TOPLEFT", f, "TOPLEFT", width + 32, -32)
+    f.heading:SetPoint("TOPLEFT", f.drag or f, "TOP", -math.floor(width / 2 + 0.5), -32)
 end
 
 -- Keep The Fishing Log's own window the right size for its notes to wrap to our width, and sitting
@@ -525,6 +536,11 @@ function J:Build()
     f:SetScale(ns.db.scale or 1)
     f:SetFrameStrata("HIGH")
     f.onMoved = SavePosition
+    -- Either half of the heading changing moves the centre, whichever page set it.
+    for _, fs in ipairs({ f.heading, f.subheading }) do
+        local set = fs.SetText
+        fs.SetText = function(self, ...) set(self, ...) J:PlaceHeading() end
+    end
 
     -- (No header buttons: the options and board toggle that sat by the XP bar
     -- are removed. Settings are on the minimap button, /tfl options and

@@ -13,6 +13,7 @@ local MF
 local P = {}
 ns.BountyPage = P
 local LEFT_W = 360
+local MIN_LEFT_W = 300 -- test build: the poster narrows to this before the standings are squeezed
 local KIND_LABEL = { day = "TODAY'S BOUNTY", week = "THIS WEEK'S BOUNTY", month = "THIS MONTH'S BOUNTY" }
 
 -- The fish behind a standing, on mouse-over: a haul's three weights, or a collection's species
@@ -89,7 +90,9 @@ local function Make(kind)
     if kind == "row" then return StandingRow() end
     local fr = CreateFrame("Frame")
     fr.text = W:Label(fr, "GameFontDisable")
-    fr.text:SetPoint("CENTER")
+    fr.text:SetPoint("LEFT", 8, 0) -- tied to the row so a long note wraps instead of being cut at both ends
+    fr.text:SetPoint("RIGHT", -8, 0)
+    fr.text:SetJustifyH("CENTER")
     return fr
 end
 
@@ -139,6 +142,7 @@ local function Slot(parent)
 end
 
 function P:Build(frame)
+    self.frame = frame
     -- Daily / Weekly / Monthly
     local strip = CreateFrame("Frame", nil, frame)
     strip:SetPoint("TOPLEFT")
@@ -241,6 +245,12 @@ function P:Build(frame)
     h:SetPoint("TOPLEFT", 4, -4)
     h.rule:SetPoint("TOPRIGHT", right, "TOPRIGHT", 0, -22)
     self.standHeader = h
+    -- Test build: what the podium pays has a line of its own, tied to both edges of the column,
+    -- so it wraps inside a narrow column. It used to follow "Standings" and ran out of the window.
+    self.payout = W:Label(right, "GameFontDisableSmall")
+    self.payout:SetPoint("TOPLEFT", 4, -30)
+    self.payout:SetPoint("TOPRIGHT", -4, -30)
+    self.payout:SetJustifyH("LEFT")
 
     -- Your last result and the last winner sit at the foot of the poster, so
     -- the standings run the whole height of the page however long they get.
@@ -282,12 +292,37 @@ function P:Build(frame)
     end
 
     self.list = W:VList(right, Make, Fill)
-    self.list:SetPoint("TOPLEFT", 0, -30)
+    self.list:SetPoint("TOPLEFT", 0, -48)
     self.list:SetPoint("BOTTOMRIGHT", -14, 0)
 
     -- On a short journal the poster's own content (a haul's three slots
     -- especially) can reach down to the results; then they step aside.
     poster:HookScript("OnSizeChanged", function() P:FitResults() end)
+    frame:HookScript("OnSizeChanged", function() P:Layout() end)
+    self:Layout()
+end
+
+-- Test build: the page was drawn for the whole width of the window. Beside the character it
+-- has about two thirds of that, so the poster takes half the page, between MIN_LEFT_W and the
+-- width it always had, and everything sized from the poster follows.
+function P:Layout()
+    local frame, poster = self.frame, self.poster
+    if not (frame and poster) then return end
+    local page = frame:GetWidth() or 0
+    if page <= 0 then return end
+    local w = math.max(MIN_LEFT_W, math.min(LEFT_W, math.floor(page * 0.5)))
+    if w == self.posterW then return end
+    self.posterW = w
+    poster:SetWidth(w)
+    poster.title:SetWidth(w - 40)
+    poster.rule:SetWidth(w - 50)
+    poster.divider:SetWidth(w - 40)
+    if self.results and self.results.rule then self.results.rule:SetWidth(w - 40) end
+    local step = math.min(104, math.floor((w - 24 - 96) / 2)) -- a haul's three slots stay inside the poster
+    for i, s in ipairs(poster.slots) do
+        s:ClearAllPoints()
+        s:SetPoint("TOP", poster.progress, "BOTTOM", (i - 2) * step, -10)
+    end
 end
 
 function P:FitResults()
@@ -377,8 +412,7 @@ function P:Refresh(state)
     if #items == 0 then items[1] = { kind = "note", h = 60, text = has and "No entries yet. The podium is empty." or "" } end
     self.items = items
     self.list:SetItems(items, true)
-    self.standHeader:SetText(("Standings   |cffa0a0a0podium pays %s|r"):format(
-        rewards[1] and ("%d / %d / %d XP"):format(rewards[1], rewards[2] or 0, rewards[3] or 0) or ""))
+    self.payout:SetText(rewards[1] and ("Podium pays %d / %d / %d XP"):format(rewards[1], rewards[2] or 0, rewards[3] or 0) or "")
 
     -- Your last result, and the last winner
     local res = self.results
@@ -427,7 +461,7 @@ J:AddPage({
     key = "bounty",
     match = function(state) return not state.recap and state.tab == "bounty" and state.subs ~= nil end,
     build = function(frame, tfl) MF = tfl P:Build(frame) end,
-    refresh = function(_, state) P:Refresh(state) P:FitResults() end,
+    refresh = function(_, state) P:Layout() P:Refresh(state) P:FitResults() end,
     subheading = function(state)
         local s = state.subs
         for _, sub in ipairs(s or {}) do if sub.key == s.current then return sub.label end end

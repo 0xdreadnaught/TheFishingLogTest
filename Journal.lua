@@ -869,8 +869,10 @@ local function WaterLines(self, out)
     end
 
     for _, h in ipairs(self.cdb.history) do
-        if h.solo and h.spots and h.spots[1] then
-            for _, e in ipairs(h.spots) do
+        -- Test build: only waters a fish was landed in (Session.lua, FishedWaters).
+        local waters = h.solo and h.spots and h.spots[1] and (self.FishedWaters and self:FishedWaters(h.spots) or h.spots)
+        if waters then
+            for _, e in ipairs(waters) do
                 local spot = Spot(e.name)
                 spot.sessions = spot.sessions + 1
                 spot.fish = spot.fish + (e.count or 0)
@@ -882,7 +884,7 @@ local function WaterLines(self, out)
                     spot.best, spot.bestName = e.biggest, e.biggestName
                 end
             end
-        elseif h.solo and h.sub then
+        elseif h.solo and h.sub and (h.count or 0) > 0 then -- test build: same rule for a log with no per-water tally
             local spot = Spot(h.sub)
             spot.sessions = spot.sessions + 1
             spot.fish = spot.fish + (h.count or 0)

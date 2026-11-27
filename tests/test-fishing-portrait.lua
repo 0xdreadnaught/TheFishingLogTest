@@ -12,7 +12,7 @@ for _, key in ipairs({"SetFrameStrata","SetToplevel","SetClampedToScreen","SetMo
     "SetBackdropBorderColor","SetColorTexture","SetTexture","SetTexCoord","SetBlendMode","SetVertexColor",
     "SetStatusBarTexture","SetStatusBarColor","SetAutoFocus","SetClipsChildren","SetOrientation","SetValueStep",
     "SetNormalTexture","SetHighlightTexture","SetPushedTexture","SetResizable","SetResizeBounds","SetWordWrap",
-    "SetNormalFontObject","LockHighlight","UnlockHighlight","SetSheathed","SetPosition","SetAllPoints"}) do methods[key]=function() end end
+    "SetSpacing","SetNormalFontObject","LockHighlight","UnlockHighlight","SetSheathed","SetPosition","SetAllPoints"}) do methods[key]=function() end end
 function methods:SetScript(k,fn) self.scripts[k]=fn end
 function methods:GetScript(k) return self.scripts[k] end
 function methods:HookScript(k,fn)
@@ -189,6 +189,33 @@ for _,width in ipairs({1140,1250,1400}) do
     win:SetSize(width,620)
     local remaining=width-48-win.angler:GetWidth()
     assert(math.abs(remaining-2*win.angler:GetWidth())<=2,"workspace must keep its two-thirds share")
-    assert(win.heading.points[1][4]==win.angler:GetWidth()+32)
 end
+-- The page heading and its note are centred as one line under the window title.
+local function headingLeft() local p=win.heading.points[1];return p[1],p[2],p[3],p[4],p[5] end
+win.heading:SetText("Waters");win.subheading:SetText("")
+local point,under,rel,x,y=headingLeft()
+assert(#win.heading.points==1 and point=="TOPLEFT" and under==win.drag and rel=="TOP" and y==-32)
+assert(x==-18,"a 36-wide heading starts 18 left of centre, got "..tostring(x))
+win.subheading:SetText("This zone") -- 54 wide, 10 gap: the pair is 100 wide
+assert(select(4,headingLeft())==-50,"heading and note are centred together, got "..tostring(select(4,headingLeft())))
+win:SetSize(1250,620);assert(select(4,headingLeft())==-50,"resizing keeps it centred")
+
+-- Bounty page: nothing may be wider than the column it sits in, at any window width.
+local pageDef
+local realAdd=J.AddPage
+J.AddPage=function(self,def) if def.key=="bounty" then pageDef=def end;return realAdd(self,def) end
+load("Rework/BountyPage.lua");J.AddPage=realAdd
+assert(pageDef,"bounty page did not register")
+local page=CreateFrame("Frame");page:SetSize(568,400)
+pageDef.build(page,MF)
+local B
+for _,r in ipairs(frames) do if r.kind=="Frame" and r.title and r.slots then B=r end end
+assert(B,"poster not found")
+local function posterWidth(w) page:SetSize(w,400);return B:GetWidth() end
+assert(posterWidth(568)==300,"narrow page: poster at its minimum, got "..B:GetWidth())
+assert(B.title:GetWidth()==260 and 568-300-12>=250,"standings keep at least 250")
+assert(B.slots[1].points[1][4]==-90 and B.slots[3].points[1][4]==90,"haul slots stay inside the poster")
+assert(posterWidth(718)==359 and posterWidth(1100)==360,"wide page: poster back to its normal width")
+assert(B.slots[1].points[1][4]==-104)
+print("PASS: page heading centred under the title; bounty poster narrows with the page")
 print("PASS: fishing outfit preservation, weapon slots, delayed models, refresh events, rank/XP, camera, and journal integration")

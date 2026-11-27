@@ -15,6 +15,7 @@ Based on 1.1.4. The full notes are in [CHANGES.txt](CHANGES.txt).
 - A sync report that opens after a sync and shows what came in.
 - Its own message prefix and channel, which is why it can't see the main addon.
 - It knows which region and rule set your character is on, and keeps each one's records, bounties and events apart. Messages from another region or rule set are ignored.
+- The logbook only lists a water for a session if you caught a fish there. The original also lists every water you passed through, with 0 fish.
 - A chat message at login saying it's the test build.
 
 ## Install
