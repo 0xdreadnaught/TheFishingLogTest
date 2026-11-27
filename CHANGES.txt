@@ -1,4 +1,28 @@
-The Fishing Log (Test) - build 1
+The Fishing Log (Test) - build 2
+
+Record sync fixes:
+- Whisper follow-ups return to the peer, including when guild/group routes
+  are absent. The existing record tally also travels during whisper swaps.
+- Routine books relay a rotating slice of all known species records, including
+  records held by offline anglers. Own records and spot Kings retain priority.
+  Books remain capped at 80 entries; send rate and peer-discovery limits stay
+  the same. Rotation is per peer and bounded to 64 remembered cursors.
+- Large multipart transfers expire after two minutes without new parts rather
+  than two minutes from their start. Duplicate parts do not extend that timer;
+  a 30-minute absolute lifetime and existing size/count caps remain in place.
+- /tfl diag includes queued packets and completed/expired transfer counts.
+
+Existing RBOOK/RBOOK2/RTALLY formats are preserved. Regression checks verify
+legacy receivers, offline-holder relay, independent peer progress, cooldowns,
+packet order/duplicates, and transfer timeouts. All Lua files pass parsing.
+No live player-to-player test has been performed for this build.
+
+This improves record propagation; it does not supply an authoritative realm
+database or guarantee identical lists. Other clients still limit what they
+send, disconnected peers cannot exchange data, and a full book can take
+several exchanges. The change is most effective when other senders adopt it.
+
+Character layout added in build 1:
 
 The journal now keeps your character on the left third of the window. The
 existing pages use the right two thirds, with all six bottom tabs preserved.

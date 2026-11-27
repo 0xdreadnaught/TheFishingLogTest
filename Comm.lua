@@ -29,7 +29,8 @@ local SEP = "~"
 local MAX_LEN = 250
 local CHUNK_LEN = 220
 local CHANNEL_JOIN_DELAY = 30 -- let the client's saved/default channels restore first
-local CACHE_LIFETIME = 120   -- seconds to remember reassembly state
+local CACHE_LIFETIME = 120   -- idle timeout; active transfers can take longer
+local MAX_TRANSFER_AGE = 1800 -- absolute cap even if new parts keep arriving
 local MAX_PARTS = 1024      -- allow large map syncs, reject unbounded chunk counts
 local MAX_PARTIAL = 64      -- bound incomplete messages during a busy sync
 local PRUNE_EVERY = 60
@@ -494,8 +495,13 @@ end
 -- Receiving
 ------------------------------------------------------------------------
 
-local partial = {}   -- sender#id -> { n, got, parts, at }
+local partial = {}   -- sender#id -> { n, got, parts, at, lastAt }
 local finished = {}  -- sender#id -> GetTime(), so channel+group copies run once
+
+function MF:CommunicationStatus()
+    return ("%d packets queued; %d transfers receiving; %d completed; %d expired"):format(
+        #queue, self.Count(partial), self.transfersCompleted or 0, self.transfersExpired or 0)
+end
 
 local function Dispatch(self, sender, text)
     local envelope,epoch,body=strsplit(SEP,text,3)
@@ -534,16 +540,20 @@ local function Reassemble(self, sender, rest)
     if buf and buf.n~=n then return end
     if not buf then
         if self.Count(partial)>=MAX_PARTIAL then return end
-        buf = { n = n, got = 0, parts = {}, at = GetTime() }
+        buf = { n = n, got = 0, parts = {}, at = GetTime(), lastAt = GetTime() }
         partial[key] = buf
     end
     if not buf.parts[i] then
         buf.parts[i] = part or ""
         buf.got = buf.got + 1
+        -- Refresh only on progress. Duplicate fragments must not keep an
+        -- abandoned transfer alive. A throttled map sync can exceed 120s.
+        buf.lastAt = GetTime()
     end
     if buf.got == buf.n then
         partial[key] = nil
         finished[key] = GetTime()
+        self.transfersCompleted = (self.transfersCompleted or 0) + 1
         Dispatch(self, sender, table.concat(buf.parts))
     end
 end
@@ -575,6 +585,7 @@ end)
 function MF:ResetCommunicationState()
     queue,whispered,answered,partial,finished={},{},{},{},{}
     self.heard={}
+    self.transfersCompleted, self.transfersExpired = 0, 0
 end
 
 -- Forget reassembly state that's old enough not to matter: finished
@@ -589,7 +600,10 @@ MF:OnTick(function()
         if at < cutoff then finished[key] = nil end
     end
     for key, buf in pairs(partial) do
-        if buf.at < cutoff then partial[key] = nil end
+        if buf.lastAt < cutoff or GetTime() - buf.at > MAX_TRANSFER_AGE then
+            partial[key] = nil
+            MF.transfersExpired = (MF.transfersExpired or 0) + 1
+        end
     end
     for topic, at in pairs(answered) do
         if at < cutoff then answered[topic] = nil end

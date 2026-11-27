@@ -362,6 +362,7 @@ local function PrintDiag(self)
         print(("  messages from other clients dropped as unreadable: %d (last: %s)"):format(
             self.handlerErrors, tostring(self.lastHandlerError)))
     end
+    print("  transport: " .. self:CommunicationStatus())
     if self.sendRefusals then
         print(("  addon send refusals this session: %d (last: %s)"):format(
             self.sendRefusals, self.lastSendRefusal))

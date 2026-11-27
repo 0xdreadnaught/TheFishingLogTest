@@ -569,11 +569,9 @@ end
 -- one is between this line and theirs.
 local PackBook2, SendBook
 
--- What we hand over: the records we hold ourselves, then the heaviest catch
--- at every spot we know of. Our own come first because nobody else can tell
--- anyone about them - a spot's king travels the realm on its own, but the
--- third heaviest carp in the lake only ever travels from us, and without it
--- we never appear in anyone else's standings at all.
+-- Own records and spot Kings retain priority, with space reserved for a
+-- rotating slice of all known species records. Otherwise an ordinary record
+-- can stop travelling as soon as its holder logs off.
 --
 -- With `theirs`, only the spots where we hold something better than they
 -- just sent.
@@ -620,9 +618,11 @@ end
 -- else's - and the anglers holding the most are the ones who meet the most
 -- people, so that is exactly where the realm's best catches would stop.
 local MINE_SHARE = 0.6
+local bookCursors = {} -- per peer, bounded; rotation survives repeated syncs
+local MAX_BOOK_CURSORS = 64
 
-local function BookEntries(self, limit, theirs)
-    local mine, kings, seen = {}, {}, {}
+local function BookEntries(self, limit, theirs, peer)
+    local mine, kings, seen, relay = {}, {}, {}, {}
 
     local function Add(into, key, id, rec, mapID)
         local tag = key .. "#" .. id
@@ -643,26 +643,68 @@ local function BookEntries(self, limit, theirs)
         if king and not self:SpotLabelProblem(key) and (not theirs or Better(theirs[key], king.w, king.t)) then
             Add(kings, key, king.id, king, self:SpotRecordMap(key))
         end
+        -- Standings count EVERY species record, not just each spot's King.
+        -- Relay records held by absent anglers as well as our own catches.
+        if not theirs and not self:SpotLabelProblem(key) then
+            local mapID = self:SpotRecordMap(key) or 0
+            for id, rec in pairs(s.fish) do
+                relay[#relay + 1] = { key = key, id = id, w = rec.w, h = rec.h,
+                    t = rec.t, s = rec.s, mapID = mapID, tag = key .. "#" .. id }
+            end
+        end
     end
 
     mine, kings = Weave(mine), Weave(kings)
 
-    -- Ours take their share, the kings take the rest, and whatever the kings
-    -- don't need comes back to ours rather than being left unsent.
-    local out = {}
-    local room = math.max(limit - #kings, math.floor(limit * MINE_SHARE))
+    -- Keep three quarters of the book for the existing own-record/King
+    -- priorities. The remaining space rotates through the full record set,
+    -- without raising the packet rate or the 80-entry book limit.
+    local priorityLimit = theirs and limit or math.max(1, limit - math.floor(limit / 4))
+    local out, included = {}, {}
+    local function Append(e)
+        out[#out + 1] = e
+        included[e.key .. "#" .. e.id] = true
+    end
+    local room = math.max(priorityLimit - #kings, math.floor(priorityLimit * MINE_SHARE))
     local used = 0
     for i = 1, math.min(#mine, room) do
-        out[#out + 1] = mine[i]
+        Append(mine[i])
         used = i
     end
     for _, e in ipairs(kings) do
-        if #out >= limit then return out end
-        out[#out + 1] = e
+        if #out >= priorityLimit then break end
+        Append(e)
     end
     for i = used + 1, #mine do
-        if #out >= limit then return out end
-        out[#out + 1] = mine[i]
+        if #out >= priorityLimit then break end
+        Append(mine[i])
+    end
+    if theirs or #relay == 0 then return out end
+
+    local peerKey = peer and self:AnglerKey(peer) or "*"
+    local cursor = bookCursors[peerKey]
+    if not cursor then
+        if self.Count(bookCursors) >= MAX_BOOK_CURSORS then
+            local oldest, oldestAt
+            for key, entry in pairs(bookCursors) do
+                if not oldestAt or entry.at < oldestAt then oldest, oldestAt = key, entry.at end
+            end
+            bookCursors[oldest] = nil
+        end
+        cursor = { tag = "" }
+        bookCursors[peerKey] = cursor
+    end
+    cursor.at = GetTime()
+    -- Key order is stable when a weight changes. A last-key cursor also
+    -- avoids restarting the same slice when records are added or removed.
+    table.sort(relay, function(a, b) return a.tag < b.tag end)
+    local start = 1
+    for i, entry in ipairs(relay) do if entry.tag > cursor.tag then start = i break end end
+    for offset = 0, #relay - 1 do
+        if #out >= limit then break end
+        local entry = relay[(start + offset - 1) % #relay + 1]
+        cursor.tag = entry.tag
+        if not included[entry.tag] then Append(entry) end
     end
     return out
 end
@@ -911,7 +953,8 @@ function MF.handlers.RASK(self, sender, confirmation, nearbyMap, xp, fish, versi
     local key, now = self:AnglerKey(sender), GetTime()
     if now - (bookSentAt[key] or -math.huge) >= BOOK_REPLY_COOLDOWN then
         bookSentAt[key] = now
-        SendBook(self, sender, BookEntries(self, BOOK_MAX))
+        SendBook(self, sender, BookEntries(self, BOOK_MAX, nil, sender))
+        self:SendTally(sender)
     end
     -- A swap, not a handout: ask for theirs too, but only once in a while,
     -- so two clients can't bat this back and forth.
@@ -962,7 +1005,10 @@ local function AfterBook(self, sender, theirs, learned)
     local mine = BookEntries(self, BOOK_TOPUP, theirs)
     if #mine == 0 then return end
     topUps = topUps + 1
-    self:ReplySoon(5, 10, function() SendBook(self, nil, mine) end)
+    -- A whisper swap may be the only working route. Capture the sender now:
+    -- lastRoad can change while the delayed reply is waiting.
+    local destination = self.lastRoad == "WHISPER" and sender or nil
+    self:ReplySoon(5, 10, function() SendBook(self, destination, mine) end)
 end
 
 function MF.handlers.RBOOK(self, sender, packed)
@@ -979,7 +1025,8 @@ function MF.handlers.RBOOK(self, sender, packed)
             local all = self:MergeRecord(key, mapID, id, self:DecodeWeight(w), holder,
                 tonumber(t), spec == "1")
             if all then learned = learned + 1 end
-            theirs[key] = { w = self:DecodeWeight(w), t = tonumber(t) or 0 }
+            local weight, when = self:DecodeWeight(w), tonumber(t) or 0
+            if weight and Better(theirs[key], weight, when) then theirs[key] = { w = weight, t = when } end
         end
     end
     AfterBook(self, sender, theirs, learned)
@@ -1139,18 +1186,16 @@ MF:On("TFL_SYNC", function(self) self:RequestBook() end)
 ------------------------------------------------------------------------
 -- Filling the gaps
 --
--- A book carries our own records and the King of every spot, which means
--- nobody relays anybody else's ordinary records. The third heaviest carp
--- in the lake travels only from the angler who caught it, and only while
--- they happen to be online with you - so an angler who logs in after you
--- leave is invisible to you until the one evening your hours overlap.
+-- The original book carried only our records and the King of every spot.
+-- Nobody relayed anybody else's ordinary records, so their holders could
+-- remain invisible unless they happened to be online with you.
 --
 -- Over weeks that leaves every client with a different idea of who holds
 -- what. The board stops being a leaderboard and becomes a rumour: two
 -- anglers can read their own screens and each come away believing they
 -- are first, which is exactly what happened.
 --
--- The fix is to say how many records we hold for each angler and let
+-- Tallies supplement the rotating book: say how many records we hold for each angler and let
 -- anyone holding more fill in the difference. A count is small, and it is
 -- the one thing that makes a reply targeted - without it the only honest
 -- move is to send everything to everybody, which is what the book was
@@ -1190,7 +1235,7 @@ local function Tally(self)
     return counts
 end
 
-function MF:SendTally()
+function MF:SendTally(to)
     local list = {}
     for h, n in pairs(Tally(self)) do list[#list + 1] = { h = h, n = n } end
     -- Most records first: the gaps that decide the order at the top of the
@@ -1204,7 +1249,10 @@ function MF:SendTally()
     for i = 1, math.min(#list, TALLY_MAX) do
         out[#out + 1] = ("%d:%d"):format(list[i].h, list[i].n)
     end
-    if #out > 0 then self:SendWide("RTALLY", table.concat(out, ";")) end
+    if #out > 0 then
+        if to then self:Whisper(to, "RTALLY", table.concat(out, ";"))
+        else self:SendWide("RTALLY", table.concat(out, ";")) end
+    end
 end
 
 -- Records we hold for anglers the asker is short on. Kings are left out on
@@ -1408,6 +1456,7 @@ function MF:ResetRecordSync()
     flushScheduled=false
     lastBook,topUps,askedBack=-math.huge,0,{}
     bountySharedAt, bookSentAt = {}, {}
+    bookCursors, tallyAnswered = {}, {}
     rosterRequestedAt, rosterContacted, rosterBudget = -math.huge, {}, 0
     rosterSeen, rosterAsked, rosterAnswered, confirmedPeers = {}, {}, {}, {}
     self.syncDiagnostics = { records = 0, bounties = 0, pools = 0 }
