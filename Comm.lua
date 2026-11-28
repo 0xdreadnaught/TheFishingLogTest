@@ -298,24 +298,29 @@ end)
 -- That list is in the source, so somebody can lock all of it. A longer list does not help:
 -- each locked name costs every player two seconds and the password box's sound. What they
 -- cannot lock ahead of time is a name that did not exist. So:
---   * WHO and HERE end with the channel the sender is in ("3", or "xkqzpab" for a spare).
---     A copy that hears of a better channel than its own asks to join it, and moves when it
---     gets in. Better means: an earlier name on the list; any list name over a spare;
---     between two spares, the one that sorts first. Every copy applies the same rule.
---   * When the whole list is locked, a copy makes a spare: the base name, "x" and six
---     random letters. It reaches others through the line above.
+--   * When the whole list is locked, a copy makes a spare. Its name carries when it was
+--     made: the base name, "x", the seconds since the addon's launch date in base 36 by the
+--     SERVER's clock (never the player's), and two random letters.
+--   * WHO and HERE end with the channel the sender is in ("3", or a spare's "x..." part)
+--     and with the names that refused the sender in the last half hour.
+--   * Two open channels meeting: the older one wins. An earlier list name beats a later
+--     one, any list name beats a spare, and of two spares the one made first. A copy that
+--     hears of an older channel asks to join it and moves once it is in.
+--   * A channel locked behind its members: they cannot tell, because nothing refuses them.
+--     When anyone says ours refused them, we join the channel they are in, announce the move
+--     once in the old channel (MOVE, sent on the channel itself, so everyone still inside
+--     hears it) and leave. The old name is then left alone for RECHECK seconds; after that
+--     we look for ourselves and move back if it lets us in. One such move per RECHECK.
+--     One player's word is enough, by the user's decision: a false one costs a silent move.
+--     Only what the game actually refused is passed on, never hearsay.
 --   * The name a character ended up in is saved for its world and tried first next login.
 --   * A copy with no channel, or on a spare, whispers WHO to anglers it meets (tooltips and
 --     nameplates find them: Tooltip.lua) and to the three it heard from most recently.
 --     If nobody answers it suggests a major city, where there are players to meet.
 -- From a later name, one earlier name is asked for again every RECHECK seconds (the one not
 -- asked for longest), and we move back when it opens.
---   * Members of a channel that is locked after they joined cannot tell: nothing refuses
---     them. Newcomers can. So WHO and HERE also say which names refused the sender in the
---     last half hour. When two different anglers (or one heard over guild or group) say
---     ours did, we go where they are, and leave ours alone for RECHECK seconds. Only what
---     the game actually refused is ever passed on, never hearsay. At most one such move
---     per RECHECK, so nobody can chase the realm from channel to channel.
+-- Waiting times are measured on the local clock; anything compared between players uses
+-- GetServerTime().
 ------------------------------------------------------------------------
 local FALLBACKS = 20
 local RECHECK = 1800
@@ -332,13 +337,36 @@ local function ChannelIndex(name)
     local n = tonumber(name:sub(#base + 1):match("^(%d%d?)$"))
     return n and n >= 2 and n <= FALLBACKS and n or nil
 end
--- A spare: the base name, "x" and six lower-case letters.
+-- A spare: the base name, "x", when it was made (seconds since FRESH_START by the server's
+-- clock, base 36) and two random letters. The part after the base name is what goes on the wire.
+local DIGITS36 = "0123456789abcdefghijklmnopqrstuvwxyz"
+local function Base36(n)
+    n = math.floor(n)
+    local out = ""
+    repeat
+        local digit = n % 36
+        out = DIGITS36:sub(digit + 1, digit + 1) .. out
+        n = (n - digit) / 36
+    until n < 1
+    return out
+end
+local function SpareParts(suffix) -- "x" .. age .. two letters -> seconds since FRESH_START
+    if type(suffix) ~= "string" or #suffix < 4 or #suffix > 10 then return nil end
+    local age = suffix:match("^x([0-9a-z]+)%l%l$")
+    return age and tonumber(age, 36) or nil
+end
 local function SpareSuffix(name)
     if type(name) ~= "string" then return nil end
     name = name:gsub("^%d+%.%s*", ""):lower()
     local base = MF.CHANNEL_BASE:lower()
     if name:sub(1, #base) ~= base then return nil end
-    return name:sub(#base + 1):match("^x%l%l%l%l%l%l$")
+    local suffix = name:sub(#base + 1)
+    return SpareParts(suffix) and suffix or nil
+end
+-- When a spare says it was made, as server time. Nil for a list name.
+local function MadeAt(name)
+    local age = SpareParts(SpareSuffix(name))
+    return age and age + (tonumber(MF.FRESH_START) or 0) or nil
 end
 -- The name as we write it, for any spelling of one of our names; nil for anyone else's.
 local function Canonical(name)
@@ -349,15 +377,16 @@ local function Canonical(name)
 end
 function MF:IsOurChannelName(name) return Canonical(name) ~= nil end
 local function NewSpare()
-    local suffix = "x"
-    for _ = 1, 6 do suffix = suffix .. string.char(96 + math.random(1, 26)) end
-    return MF.CHANNEL_BASE .. suffix
+    local age = math.max(0, GetServerTime() - (tonumber(MF.FRESH_START) or 0))
+    return MF.CHANNEL_BASE .. "x" .. Base36(age) .. string.char(96 + math.random(1, 26), 96 + math.random(1, 26))
 end
--- Is channel a the better place to be than channel b? (Both ours.)
+-- Is channel a the better place to be than channel b? (Both ours.) The older one is.
 local function Better(a, b)
     local ia, ib = ChannelIndex(a), ChannelIndex(b)
     if ia and ib then return ia < ib end
     if ia or ib then return ia ~= nil end
+    local ma, mb = MadeAt(a) or math.huge, MadeAt(b) or math.huge
+    if ma ~= mb then return ma < mb end
     return a:lower() < b:lower()
 end
 local function Joined(name)
@@ -494,7 +523,10 @@ local function Settle(self, name)
     local old = self.CHANNEL
     self.CHANNEL, lockedAt[name:lower()], suggested[name:lower()] = name, nil, nil
     if candidate == name then candidate = nil end
-    if old:lower() ~= name:lower() and Joined(old) and type(LeaveChannelByName) == "function" then pcall(LeaveChannelByName, old) end
+    if old:lower() ~= name:lower() and Joined(old) then
+        if Condemned(old) and self.AnnounceMove then self:AnnounceMove(old, name) end
+        if type(LeaveChannelByName) == "function" then pcall(LeaveChannelByName, old) end
+    end
     local state = self.discoveryJoin
     if state then state.joined, state.error = false, nil end -- so the next health check announces the channel and scans it
 end
@@ -525,7 +557,9 @@ local function FromWire(field)
     if type(field) ~= "string" then return nil end
     local n = field:match("^%d%d?$") and tonumber(field)
     if n and n >= 1 and n <= FALLBACKS then return ChannelName(n) end
-    if field:match("^x%l%l%l%l%l%l$") then return MF.CHANNEL_BASE .. field end
+    -- A spare, unless it claims to have been made in the future (two minutes' grace for clocks).
+    local age = SpareParts(field)
+    if age and age + (tonumber(MF.FRESH_START) or 0) <= GetServerTime() + 120 then return MF.CHANNEL_BASE .. field end
 end
 local helpAsked = {} -- angler key -> true: told us their channel, or we have asked them
 local suggestedAt = -math.huge
@@ -547,9 +581,8 @@ function MF:NotePeerChannel(sender, field)
 end
 
 -- Which of our names refused us in the last half hour, for the end of WHO and HERE: the
--- list names as one base-36 number (bit 0 is the first name), then "." and a spare's
--- letters if one did. "" when none. "3" = the first two; "mh33.xkqzpab" = all 20 and a spare.
-local DIGITS36 = "0123456789abcdefghijklmnopqrstuvwxyz"
+-- list names as one base-36 number (bit 0 is the first name), then "." and a spare's wire
+-- form if one did. "" when none. "3" = the first two; "mh33.xtp6x2kqz" = all 20 and a spare.
 function MF:RefusedChannelsForWire()
     if not self.db or not self.db.settings.channel then return "" end
     local now, mask, spare, spareAt = GetTime(), 0, nil, nil
@@ -561,23 +594,35 @@ function MF:RefusedChannelsForWire()
         local suffix = now - at < RECHECK and (not spareAt or at > spareAt) and SpareSuffix(key)
         if suffix then spare, spareAt = suffix, at end
     end
-    local out = ""
-    while mask > 0 do
-        local digit = mask % 36
-        out = DIGITS36:sub(digit + 1, digit + 1) .. out
-        mask = (mask - digit) / 36
-    end
-    return out .. (spare and ("." .. spare) or "")
+    return (mask > 0 and Base36(mask) or "") .. (spare and ("." .. spare) or "")
+end
+
+-- Our channel turns newcomers away, somebody says. Join `to` (or the next list name), and
+-- leave ours once we are in. At most once per RECHECK.
+local movedOnWordAt = -math.huge
+local moveHeardAt = {} -- old name, lower case -> GetTime() a MOVE for it was last heard on the channel itself
+local function LeaveFor(self, to)
+    local now, current = GetTime(), self.CHANNEL
+    if now - movedOnWordAt < RECHECK then return false end
+    local at = to and lockedAt[to:lower()]
+    if to and (to:lower() == current:lower() or (at and now - at < RECHECK)) then to = nil end
+    lockedAt[current:lower()] = now -- (before choosing: the next list name must not be the one we are leaving)
+    to = to or NextOpenName(now)
+    if not to then return false end
+    movedOnWordAt = now
+    condemned[current:lower()] = now
+    self.movedOnOthersWord = (self.movedOnOthersWord or 0) + 1
+    Ask(self, to, now)
+    return true
 end
 
 -- A peer says which names refused it. If ours is among them we cannot tell from inside.
-local vouchers, movedOnWordAt = {}, -math.huge
 function MF:NotePeerRefusals(sender, field, theirs)
-    if type(field) ~= "string" or field == "" or #field > 12 or type(sender) ~= "string" then return end
+    if type(field) ~= "string" or field == "" or #field > 16 or type(sender) ~= "string" then return end
     if (self.IsMe and self:IsMe(sender)) or not self.db or not self.db.settings.channel or not self.discoveryJoin then return end
     local current = self.CHANNEL
     if not Joined(current) then return end
-    local maskText, spare = field:match("^([0-9a-z]*)%.(x%l%l%l%l%l%l)$")
+    local maskText, spare = field:match("^([0-9a-z]*)%.(x[0-9a-z]+)$")
     if not maskText then maskText = field:match("^[0-9a-z]+$") end
     if not maskText or #maskText > 4 then return end
     local mask = tonumber(maskText, 36) or 0
@@ -585,28 +630,34 @@ function MF:NotePeerRefusals(sender, field, theirs)
     local named
     if index then named = math.floor(mask / 2 ^ (index - 1)) % 2 == 1
     else named = spare ~= nil and SpareSuffix(current) == spare end
-    if not named then return end
-    local now = GetTime()
-    local road = self.lastRoad
-    vouchers[self:AnglerKey(sender)] = { at = now, to = FromWire(theirs), close = road == "GUILD" or road == "PARTY" or road == "RAID" }
-    local count, close, best = 0, false, nil
-    for key, v in pairs(vouchers) do
-        if now - v.at >= RECHECK then vouchers[key] = nil
-        else
-            count, close = count + 1, close or v.close
-            local at = v.to and lockedAt[v.to:lower()]
-            if v.to and v.to:lower() ~= current:lower() and not (at and now - at < RECHECK) and (not best or Better(v.to, best)) then best = v.to end
-        end
-    end
-    if (count < 2 and not close) or now - movedOnWordAt < RECHECK then return end
-    -- Go where the people who were turned away are; failing that, the next list name.
-    lockedAt[current:lower()] = now
-    local to = best or NextOpenName(now)
-    if not to then return end
-    movedOnWordAt, vouchers = now, {}
-    condemned[current:lower()] = now
-    self.movedOnOthersWord = (self.movedOnOthersWord or 0) + 1
-    Ask(self, to, now)
+    if named then LeaveFor(self, FromWire(theirs)) end
+end
+
+-- "Everyone out": said once in the channel being left, by a copy that has just got into the
+-- new one, so the people still inside do not each have to be told by whisper.
+local function WireName(name)
+    local index = ChannelIndex(name)
+    return index and tostring(index) or SpareSuffix(name)
+end
+function MF:AnnounceMove(old, new)
+    local heard = moveHeardAt[old:lower()]
+    if heard and GetTime() - heard < 60 then return false end -- they have been told
+    local id = GetChannelName(old)
+    local from, to = WireName(old), WireName(new)
+    local send = C_ChatInfo and C_ChatInfo.SendAddonMessage
+    if type(id) ~= "number" or id <= 0 or not from or not to or type(send) ~= "function" then return false end
+    -- Straight to the client: the queue's channel road is switched off (CUSTOM_CHANNEL_SUPPORTED).
+    local msg = strjoin(SEP, "LIVE2", self.FRESH_START, self.worldCode or "?", "MOVE", from, to)
+    self.movesAnnounced = (self.movesAnnounced or 0) + 1
+    return (pcall(send, self.PREFIX, msg, "CHANNEL", id))
+end
+function MF.handlers.MOVE(self, sender, from, to)
+    local old, new = FromWire(from), FromWire(to)
+    if not old or not new or not self.db or not self.db.settings.channel or not self.discoveryJoin then return end
+    if self.lastRoad == "CHANNEL" then moveHeardAt[old:lower()] = GetTime() end
+    if old:lower() ~= self.CHANNEL:lower() or not Joined(old) then return end
+    self.movesHeard = (self.movesHeard or 0) + 1
+    LeaveFor(self, new)
 end
 
 -- Saved for this world (World.lua keeps it with the world's other data), tried first next login.

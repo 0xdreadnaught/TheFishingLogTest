@@ -39,7 +39,7 @@ The original keeps one pile of other people's records for your whole account. If
 
 ## If you're testing
 
-At login the addon says which region and rule set it thinks you're on, for example "You are on Americas & Oceania, PvP". I've only been able to check that on a PvP character, so tell me if yours is wrong. If it says it couldn't tell, type `/tfl clientdiag` and send me the lines that start with "World".
+At login the addon says which region and rule set it thinks you're on, for example "You are on Americas & Oceania, PvP". I've only been able to check that on PvP and Normal characters, so tell me if yours is wrong. If it says it couldn't tell, type `/tfl clientdiag` and send me the lines that start with "World".
 
 Records, bounties and events only reach people on the same region and rule set as you who are also on the test build, so expect it to be quiet until a few of you are on.
 
@@ -53,7 +53,7 @@ git diff 18e3680 HEAD -- . ':!tests' ':!README.md'
 
 The version line is still 1.1.4 on purpose. The build number is the `X-Build` line in the toc. It goes out as an extra last field on `WHO` and `HERE`, which is how a tester on an older build gets told to update. After it come the finder channel the sender is in and the channel names that refused them lately.
 
-The network split is four constants: `MF.PREFIX` and `MF.CHANNEL` in `Comm.lua`, `PREFIX` in `Rework/RealmPage.lua`, and `MACRO_NAME` in `Storage.lua`. Message formats are the same as 1.1.4 except the envelope. `LIVE1~<launch>~...` is now `LIVE2~<launch>~<world>~...`, where the world is one base-36 number for region and rule set (`1` is Americas PvP). That is `World.lua` plus the envelope lines in `Comm.lua`. The region comes from `GetCurrentRegion()` and the rule set from the `PvPRuleset`, `RPRuleset` and `HardcoreRuleset` game rules. I have only checked it on one PvP character.
+The network split is four constants: `MF.PREFIX` and `MF.CHANNEL` in `Comm.lua`, `PREFIX` in `Rework/RealmPage.lua`, and `MACRO_NAME` in `Storage.lua`. Message formats are the same as 1.1.4 with three exceptions: the envelope, the extra fields on the end of `WHO` and `HERE` described above, and one new message, `MOVE`, which a copy sends in a finder channel it is leaving because the channel has been locked. The envelope: `LIVE1~<launch>~...` is now `LIVE2~<launch>~<world>~...`, where the world is one base-36 number for region and rule set (`1` is Americas PvP). That is `World.lua` plus the envelope lines in `Comm.lua`. The region comes from `GetCurrentRegion()` and the rule set from the `PvPRuleset`, `RPRuleset` and `HardcoreRuleset` game rules. I have checked it on a PvP and a Normal character; Roleplay and Hardcore are read from the rule names and unconfirmed.
 
 ## Tests
 

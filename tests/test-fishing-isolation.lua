@@ -481,7 +481,7 @@ test("when the whole list is locked it makes a spare; if even spares are refused
         c:JoinChannel(true)
         for _ = 1, 120 do F.advance(1); F.flush(); for _, fn in ipairs(c.ticks) do fn(c) end end
         assert(asked == 22, "asked " .. asked .. " times in two minutes; expected the 20 names once each, then two spares")
-        assert(c.CHANNEL:find("^TheFishingLogTestx%l%l%l%l%l%l$") and c:IsOurChannelName(c.CHANNEL) and box == nil, c.CHANNEL)
+        assert(c.CHANNEL:find("^TheFishingLogTestx[0-9a-z]+%l%l$") and c:IsOurChannelName(c.CHANNEL) and box == nil, c.CHANNEL)
         assert(c.discoveryJoin.error == "every channel name is locked", tostring(c.discoveryJoin.error))
     end)
     for _, n in ipairs(names) do _G[n] = saved[n] end
@@ -524,6 +524,17 @@ test("the password box is closed as it opens, on a client that only has the dial
     assert(ok, err)
 end)
 
+-- Spares carry when they were made: "x", seconds since the launch date (1 in the fixture) in base 36, two letters.
+local function b36(n)
+    local digits, out = "0123456789abcdefghijklmnopqrstuvwxyz", ""
+    n = math.floor(n)
+    repeat local r = n % 36; out = digits:sub(r + 1, r + 1) .. out; n = math.floor((n - r) / 36) until n < 1
+    return out
+end
+local function SpareMade(secondsAgo, tail) return "x" .. b36(GetServerTime() - 1 - secondsAgo) .. (tail or "aa") end
+local SPARE = "^TheFishingLogTestx[0-9a-z]+%l%l$"
+local function Wire(name) return name:sub(#"TheFishingLogTest" + 1) end
+
 -- A client for the channel tests: some names locked, joins answered a moment later as in the game.
 local function ChannelWorld(c, locked)
     local w = { inside = {}, asked = {}, left = {}, locked = locked or {}, nextID = 5, said = {}, whispers = {} }
@@ -560,7 +571,8 @@ test("a peer's channel: a better one is joined and moved to, a worse or refused 
         assert(c.CHANNEL == "TheFishingLogTest3" and c:FinderChannelForWire() == "3")
         w.asked = {}
         -- junk, our own channel, a later list name and a spare are all no reason to move
-        for _, field in ipairs({ "", "0", "21", "abc", "x", "xABCDEF", "xabcde", "xabcdefg", "3", "7", "xaaaaaa" }) do c:NotePeerChannel("Peer", field) end
+        -- (a spare from the future is not believed: stamps are checked against the server's clock)
+        for _, field in ipairs({ "", "0", "21", "abc", "x", "xABCDEF", "x1a", "xzzzzzzzzzzzz", SpareMade(-600), "3", "7", SpareMade(100) }) do c:NotePeerChannel("Peer", field) end
         c:NotePeerChannel("Local", "1") -- something we said ourselves
         assert(#w.asked == 0, "asked to join for a channel that is no better: " .. table.concat(w.asked, ","))
         -- an earlier list name we were refused a moment ago: not asked again yet
@@ -575,7 +587,7 @@ test("a peer's channel: a better one is joined and moved to, a worse or refused 
         local w2 = ChannelWorld(d, locked)
         w2.start(); w2.settle(60)
         local spare = d.CHANNEL
-        assert(spare:find("x%l%l%l%l%l%l$") and w2.inside[spare], spare)
+        assert(spare:find(SPARE) and w2.inside[spare], spare)
         locked.TheFishingLogTest5 = nil
         w2.settle(1800) -- past the half hour in which a refused name is left alone
         assert(d.CHANNEL == spare, "the addon's own half-hourly look starts at the top of the list and has not reached 5")
@@ -599,17 +611,17 @@ test("suggestions that turn out locked are tried at most three times a session, 
         w.asked = {}
         for n = 1, 5 do c:NotePeerChannel("Liar", tostring(n)); w.settle(31) end
         assert(#w.asked == 0, table.concat(w.asked, ","))
-        -- ...we move to a spare, and the liar names locked spares that sort before ours
+        -- ...we move to a spare, and the liar names locked spares older than ours
         w.locked.TheFishingLogTest6 = true
         for i = 7, 20 do w.locked["TheFishingLogTest" .. i] = true end
         w.inside.TheFishingLogTest6 = nil -- a ban puts you out
         c:ChannelLocked("TheFishingLogTest6", "BANNED"); w.settle(60)
-        assert(c.CHANNEL:find("x%l%l%l%l%l%l$") and w.inside[c.CHANNEL], "should be in a spare of its own: " .. c.CHANNEL)
+        assert(c.CHANNEL:find(SPARE) and w.inside[c.CHANNEL], "should be in a spare of its own: " .. c.CHANNEL)
         w.locked.all = true
         w.asked = {}
-        c:NotePeerChannel("Liar", "xaaaaaa"); c:NotePeerChannel("Liar", "xaaaaab")
+        c:NotePeerChannel("Liar", SpareMade(9000, "aa")); c:NotePeerChannel("Liar", SpareMade(9000, "ab"))
         assert(#w.asked == 1, "two asks inside 30 seconds")
-        for _, suffix in ipairs({ "xaaaaab", "xaaaaac", "xaaaaad", "xaaaaae", "xaaaaaf" }) do w.settle(31); c:NotePeerChannel("Liar", suffix) end
+        for _, tail in ipairs({ "ab", "ac", "ad", "ae", "af" }) do w.settle(31); c:NotePeerChannel("Liar", SpareMade(9000, tail)) end
         assert(#w.asked == 3, "expected three tries in all, got " .. #w.asked .. ": " .. table.concat(w.asked, ","))
         assert(w.inside[c.CHANNEL], "and it kept the channel it had")
     end)
@@ -626,13 +638,16 @@ test("the whole list locked: a spare is made, remembered for next login, and ang
         w.start(); w.settle(60)
         assert(#w.asked == 21, "20 list names and one spare, asked " .. #w.asked)
         local spare = c.CHANNEL
-        assert(spare:find("^TheFishingLogTestx%l%l%l%l%l%l$") and w.inside[spare], spare)
-        assert(c.db.finderChannel == spare and c:FinderChannelForWire() == spare:match("x%l+$"))
+        assert(spare:find(SPARE) and w.inside[spare], spare)
+        assert(c.db.finderChannel == spare and c:FinderChannelForWire() == Wire(spare))
+        -- its name says when it was made, by the server's clock
+        local made = tonumber(Wire(spare):sub(2, -3), 36) + 1
+        assert(math.abs(GetServerTime() - made) < 120, "made " .. made .. ", server time " .. GetServerTime())
         assert(#w.said == 1, "the lock is mentioned once: " .. #w.said)
         -- on a spare of its own making it asks the anglers it meets, once each, not faster than one in 10 seconds
         w.whispers = {}
         c:MetPeer("Stranger"); c:MetPeer("Stranger"); c:MetPeer("Second")
-        assert(#w.whispers == 1 and w.whispers[1]:find("^Stranger:WHO~1%.1%.4~") and w.whispers[1]:find("~" .. spare:match("x%l+$") .. "~mh33$"), table.concat(w.whispers, " | "))
+        assert(#w.whispers == 1 and w.whispers[1]:find("^Stranger:WHO~1%.1%.4~") and w.whispers[1]:find("~" .. Wire(spare) .. "~mh33$"), table.concat(w.whispers, " | "))
         -- two minutes in, the three anglers heard from most recently are asked too
         w.settle(60)
         local who = table.concat(w.whispers, " | ")
@@ -641,32 +656,37 @@ test("the whole list locked: a spare is made, remembered for next login, and ang
         w.settle(120)
         assert(#w.said == 2 and w.said[2]:find("major city", 1, true), tostring(w.said[2]))
         w.settle(600); assert(#w.said == 2)
-        -- an angler met in the city is in another spare that sorts first: join them
-        c:NotePeerChannel("City Angler", "xaaaaaa")
+        -- an angler in a spare made after ours should come to us; one in an older spare we join
+        local asks = #w.asked
+        c:NotePeerChannel("Newer", SpareMade(0, "zz")); w.settle(31)
+        assert(#w.asked == asks and c.CHANNEL == spare, "moved to a newer spare")
+        local older = "TheFishingLogTest" .. SpareMade(50000)
+        c:NotePeerChannel("City Angler", Wire(older))
         w.settle(4)
-        assert(c.CHANNEL == "TheFishingLogTestxaaaaaa" and w.left[#w.left] == spare, c.CHANNEL)
+        assert(c.CHANNEL == older and w.left[#w.left] == spare, c.CHANNEL)
         w.settle(6)
-        assert(c.db.finderChannel == "TheFishingLogTestxaaaaaa")
+        assert(c.db.finderChannel == older)
 
         -- next login: the remembered name is tried first, with no walk through the locked list
         local d = Client()
-        d.db.finderChannel = "TheFishingLogTestxaaaaaa"
+        d.db.finderChannel = older
         local w2 = ChannelWorld(d, locked)
         d:Fire("TFL_LOGIN")
         w2.start()
-        assert(w2.asked[1] == "TheFishingLogTestxaaaaaa" and d.CHANNEL == w2.asked[1] and w2.inside[d.CHANNEL], table.concat(w2.asked, ","))
+        assert(w2.asked[1] == older and d.CHANNEL == w2.asked[1] and w2.inside[d.CHANNEL], table.concat(w2.asked, ","))
         w2.settle(120)
-        assert(table.concat(w2.asked, ",") == "TheFishingLogTestxaaaaaa,TheFishingLogTest", "then one look at the top of the list, not a walk: " .. table.concat(w2.asked, ","))
+        assert(table.concat(w2.asked, ",") == older .. ",TheFishingLogTest", "then one look at the top of the list, not a walk: " .. table.concat(w2.asked, ","))
         -- and a remembered name that is somebody else's, or junk, is ignored
-        for _, bad in ipairs({ "Trade", "TheFishingLogTest21", "TheFishingLogTestxABC", 7 }) do
+        for _, bad in ipairs({ "Trade", "TheFishingLogTest21", "TheFishingLogTestx1", "TheFishingLogTestx-1aa", 7 }) do
             local e = Client(); e.db.finderChannel = bad; e:Fire("TFL_LOGIN")
             assert(e.CHANNEL == "TheFishingLogTest", tostring(bad) .. " -> " .. e.CHANNEL)
         end
     end)
 end)
 
-test("locked behind us: when newcomers say our channel refused them, we go where they are", function()
+test("locked behind us: a newcomer says our channel refused them; we go where they are and tell the rest", function()
     WithChannelGlobals(function()
+        local function moves() local out = {} for _, m in ipairs(wire) do if m.msg:find("~MOVE~", 1, true) then out[#out + 1] = m end end return out end
         -- what a newcomer sends: the list names that refused it, as one number
         local n = Client()
         local wn = ChannelWorld(n, { TheFishingLogTest = true, TheFishingLogTest2 = true })
@@ -681,64 +701,76 @@ test("locked behind us: when newcomers say our channel refused them, we go where
         local w = ChannelWorld(c, {})
         w.start(); w.settle(6)
         assert(c.CHANNEL == "TheFishingLogTest" and w.inside.TheFishingLogTest)
+        local oldID = w.inside.TheFishingLogTest
         w.locked.TheFishingLogTest = true
         w.asked = {}
-        c.lastRoad = "WHISPER"
         -- claims about other names, and junk, are nothing to act on
-        for _, field in ipairs({ "", "2", "a", "mh34x", "ZZ", "3.xabc", ".", "1.", "zzzzz" }) do c:NotePeerRefusals("Stranger", field, "3") end
+        for _, field in ipairs({ "", "2", "a", "mh34x", "ZZ", "3.xabc!", ".", "zzzzz" }) do c:NotePeerRefusals("Stranger", field, "3") end
+        c:NotePeerRefusals("Local", "1", "2") -- our own words
         assert(#w.asked == 0 and c.CHANNEL == "TheFishingLogTest", "moved on a claim that does not name our channel: " .. table.concat(w.asked, ","))
-        -- one stranger says ours refused them: not enough
-        c:NotePeerRefusals("Stranger", "1", "2"); c:NotePeerRefusals("Stranger", "1", "2"); c:NotePeerRefusals("Local", "1", "2")
-        assert(#w.asked == 0, "one stranger's word (or our own) is not enough")
-        -- a second one does it: join where they are, then leave ours
-        c:NotePeerRefusals("Another", "3", "2")
-        assert(w.asked[1] == "TheFishingLogTest2" and c.CHANNEL == "TheFishingLogTest", "joins before leaving")
+        -- one player's word is enough: join where they are, say so in the old channel, then leave it
+        c:NotePeerRefusals("Stranger", "1", "2")
+        assert(w.asked[1] == "TheFishingLogTest2" and c.CHANNEL == "TheFishingLogTest" and #moves() == 0, "joins before leaving or announcing")
         w.settle(4)
         assert(c.CHANNEL == "TheFishingLogTest2" and w.left[1] == "TheFishingLogTest" and c.movedOnOthersWord == 1, c.CHANNEL)
-        assert(c:RefusedChannelsForWire() == "", "it was told, not refused: it passes nothing on")
-        -- the people still inside the old one advertise it, and it is the earlier name: not for half an hour
+        local said = moves()
+        assert(#said == 1 and said[1].road == "CHANNEL" and said[1].to == oldID and said[1].msg == "LIVE2~1~?~MOVE~1~2" and said[1].prefix == c.PREFIX,
+            "one MOVE, in the channel being left: " .. (said[1] and (said[1].msg .. " on " .. tostring(said[1].road) .. " " .. tostring(said[1].to)) or "none"))
+        assert(c:RefusedChannelsForWire() == "", "it was told, not refused: it passes no refusal on")
+        -- the people still inside the old one advertise it, and it is the older name: not for half an hour
         w.asked = {}
         c:NotePeerChannel("Insider", "1"); w.settle(60)
         assert(#w.asked == 0 and c.CHANNEL == "TheFishingLogTest2", "went straight back: " .. table.concat(w.asked, ","))
         -- and nobody can chase it onwards inside that half hour either
-        c:NotePeerRefusals("Stranger", "2", "5"); c:NotePeerRefusals("Another", "2", "5"); w.settle(4)
+        c:NotePeerRefusals("Stranger", "2", "5"); c:Fire("CHAT_MSG_ADDON", c.PREFIX, "LIVE2~1~?~MOVE~2~5", "CHANNEL", "Chaser"); w.settle(4)
         assert(#w.asked == 0 and c.CHANNEL == "TheFishingLogTest2", "moved twice in half an hour")
         -- half an hour on it looks at the old one itself, is refused, and from then on says so
         w.settle(1800)
         assert(w.asked[1] == "TheFishingLogTest" and c.CHANNEL == "TheFishingLogTest2" and c:RefusedChannelsForWire() == "1", table.concat(w.asked, ",") .. " / " .. c:RefusedChannelsForWire())
 
-        -- one guildmate's or party member's word is enough
+        -- someone still inside hears the MOVE on the channel: follows, and does not repeat it
+        local e = Client()
+        local we = ChannelWorld(e, {})
+        we.start(); we.settle(6)
+        e:Fire("CHAT_MSG_ADDON", e.PREFIX, "LIVE2~1~?~MOVE~5~6", "CHANNEL", "Mover") -- about a channel we are not in
+        e:Fire("CHAT_MSG_ADDON", e.PREFIX, "LIVE2~1~EU~MOVE~1~2", "CHANNEL", "Mover") -- another world's
+        e:Fire("CHAT_MSG_ADDON", e.PREFIX, "LIVE2~1~?~MOVE~1~junk", "CHANNEL", "Mover")
+        we.settle(4)
+        assert(e.CHANNEL == "TheFishingLogTest" and #we.asked == 1, "moved on a MOVE that is not ours to act on")
+        e:Fire("CHAT_MSG_ADDON", e.PREFIX, "LIVE2~1~?~MOVE~1~2", "CHANNEL", "Mover")
+        we.settle(4)
+        assert(e.CHANNEL == "TheFishingLogTest2" and e.movesHeard == 1 and #moves() == 0, "should follow quietly: in " .. e.CHANNEL .. ", announced " .. #moves())
+
+        -- told by whisper instead: it is the one who tells the channel
         local g = Client()
         local wg = ChannelWorld(g, {})
         wg.start(); wg.settle(6)
-        g.lastRoad = "GUILD"
-        g:NotePeerRefusals("Guildmate", "1", "4"); wg.settle(4)
-        assert(g.CHANNEL == "TheFishingLogTest4", g.CHANNEL)
+        g:Fire("CHAT_MSG_ADDON", g.PREFIX, "LIVE2~1~?~MOVE~1~4", "WHISPER", "Friend"); wg.settle(4)
+        assert(g.CHANNEL == "TheFishingLogTest4" and #moves() == 1 and moves()[1].msg == "LIVE2~1~?~MOVE~1~4", g.CHANNEL)
         -- if they say where they were refused but not where they are, the next list name is used
         local p = Client()
         local wp = ChannelWorld(p, {})
         wp.start(); wp.settle(6)
-        p.lastRoad = "PARTY"
         p:NotePeerRefusals("Friend", "1", ""); wp.settle(4)
         assert(p.CHANNEL == "TheFishingLogTest2", p.CHANNEL)
         -- a lie costs half an hour: the old channel is open, so the next look moves it back
         wp.settle(1830)
         assert(p.CHANNEL == "TheFishingLogTest", "should be back in the usual channel, is in " .. p.CHANNEL)
 
-        -- on a spare: named by its letters
+        -- on a spare: named by its wire form, and the place to go may be newer than ours
         local sp = Client()
         local locked = {}
         for i = 1, 20 do locked[i == 1 and "TheFishingLogTest" or ("TheFishingLogTest" .. i)] = true end
         local ws = ChannelWorld(sp, locked)
         ws.start(); ws.settle(60)
         local spare = sp.CHANNEL
-        local letters = spare:match("x%l%l%l%l%l%l$")
-        assert(letters and sp:RefusedChannelsForWire() == "mh33", sp:RefusedChannelsForWire())
-        sp.lastRoad = "GUILD"
-        sp:NotePeerRefusals("Guildmate", "mh33.xzzzzzz", "xbbbbbb"); ws.settle(4)
+        assert(spare:find(SPARE) and sp:RefusedChannelsForWire() == "mh33", sp:RefusedChannelsForWire())
+        sp:NotePeerRefusals("Stranger", "mh33." .. SpareMade(7, "qq"), SpareMade(0, "zz")); ws.settle(4)
         assert(sp.CHANNEL == spare, "another spare's refusal is not ours")
-        sp:NotePeerRefusals("Guildmate", "mh33." .. letters, "xzzzzzy"); ws.settle(4)
-        assert(sp.CHANNEL == "TheFishingLogTestxzzzzzy" and not ws.inside[spare], sp.CHANNEL)
+        local newer = SpareMade(0, "zy")
+        sp:NotePeerRefusals("Stranger", "mh33." .. Wire(spare), newer); ws.settle(4)
+        assert(sp.CHANNEL == "TheFishingLogTest" .. newer and not ws.inside[spare], sp.CHANNEL)
+        assert(moves()[1] and moves()[1].msg == "LIVE2~1~?~MOVE~" .. Wire(spare) .. "~" .. newer, moves()[1] and moves()[1].msg or "no MOVE")
     end)
 end)
 

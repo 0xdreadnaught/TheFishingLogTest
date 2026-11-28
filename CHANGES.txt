@@ -6,6 +6,25 @@ CurseForge. This build only sees anglers who run the test build.
 Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
 X-Build line in the toc and shows in the journal title and diagnostics.
 
+Build 26 - spare channels carry when they were made; a move is announced in the old channel
+- A spare channel's name now holds when it was made: the base name, "x", the
+  seconds since the addon's launch date in base 36 by the SERVER's clock
+  (GetServerTime, never the player's clock), and two random letters. A spare
+  that claims to be from the future is ignored (two minutes' grace).
+- Two open channels meeting: the older one wins. List names before spares,
+  and of two spares the one made first. Build 24 ordered spares by name.
+- A channel locked behind its members: one player saying it refused them is
+  now enough (build 25 wanted two, or one guildmate). The addon joins where
+  they are, then says so once in the channel it is leaving, with a new
+  message MOVE sent on the channel itself, so everyone still inside hears it
+  at once and follows without repeating it. Still one such move per half
+  hour, and the old channel is looked at again after that.
+- Why older wins and not newer: every newcomer the usual channel refuses makes
+  a brand-new channel before it has met anyone. If newest won, each of them
+  would pull everyone else across. The newcomer joins the established one;
+  the established one is left only when it turns somebody away.
+- Spares made by builds 24 and 25 are not recognised.
+
 Build 25 - following newcomers out of a channel locked behind us
 - Closes the limit noted in build 24. Members of a channel that is locked
   after they joined cannot tell; the people it turns away can. WHO and HERE
