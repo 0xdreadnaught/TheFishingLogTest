@@ -187,6 +187,7 @@ local function DiscoveryConnected(self,state)
     if remove and DEFAULT_CHAT_FRAME then pcall(remove,DEFAULT_CHAT_FRAME,self.CHANNEL) end
     if state.joined then return end
     state.joined=true state.error=nil state.attempts=0 state.nextAt=0
+    if self.RememberChannel then self:RememberChannel() end
     if not self.CUSTOM_CHANNEL_SUPPORTED then self:Fire("TFL_ROSTER_SYNC")
     else self:Fire("TFL_SYNC") end
 end
@@ -291,11 +292,25 @@ end)
 -- CHANNEL_PASSWORD_REQUEST with the channel's name, then a WRONG_PASSWORD channel notice.
 --
 -- So: close the box, stop asking for that name, and use the next one: TheFishingLogTest2,
--- then 3, up to FALLBACKS. Every copy walks the same list from the start at each login, so
--- everyone ends up in the lowest name that is open. While in a later name, the earlier ones
--- are asked for again every RECHECK seconds, one at a time, and we move back down when one
--- opens. Nothing is saved: a lock is somebody's doing, not a fact about the name.
--- Record sync by whisper, guild and group does not depend on any of this.
+-- then 3, up to FALLBACKS. Every copy walks the same list, so everyone ends up in the lowest
+-- name that is open. Record sync by whisper, guild and group does not depend on any of this.
+--
+-- That list is in the source, so somebody can lock all of it. A longer list does not help:
+-- each locked name costs every player two seconds and the password box's sound. What they
+-- cannot lock ahead of time is a name that did not exist. So:
+--   * WHO and HERE end with the channel the sender is in ("3", or "xkqzpab" for a spare).
+--     A copy that hears of a better channel than its own asks to join it, and moves when it
+--     gets in. Better means: an earlier name on the list; any list name over a spare;
+--     between two spares, the one that sorts first. Every copy applies the same rule.
+--   * When the whole list is locked, a copy makes a spare: the base name, "x" and six
+--     random letters. It reaches others through the line above.
+--   * The name a character ended up in is saved for its world and tried first next login.
+--   * A copy with no channel, or on a spare, whispers WHO to anglers it meets (tooltips and
+--     nameplates find them: Tooltip.lua) and to the three it heard from most recently.
+--     If nobody answers it suggests a major city, where there are players to meet.
+-- From a later name, one earlier name is asked for again every RECHECK seconds (the one not
+-- asked for longest), and we move back when it opens.
+-- Known limit: members of a channel that is locked after they joined cannot tell.
 ------------------------------------------------------------------------
 local FALLBACKS = 20
 local RECHECK = 1800
@@ -312,7 +327,46 @@ local function ChannelIndex(name)
     local n = tonumber(name:sub(#base + 1):match("^(%d%d?)$"))
     return n and n >= 2 and n <= FALLBACKS and n or nil
 end
-function MF:IsOurChannelName(name) return ChannelIndex(name) ~= nil end
+-- A spare: the base name, "x" and six lower-case letters.
+local function SpareSuffix(name)
+    if type(name) ~= "string" then return nil end
+    name = name:gsub("^%d+%.%s*", ""):lower()
+    local base = MF.CHANNEL_BASE:lower()
+    if name:sub(1, #base) ~= base then return nil end
+    return name:sub(#base + 1):match("^x%l%l%l%l%l%l$")
+end
+-- The name as we write it, for any spelling of one of our names; nil for anyone else's.
+local function Canonical(name)
+    local index = ChannelIndex(name)
+    if index then return ChannelName(index) end
+    local suffix = SpareSuffix(name)
+    return suffix and (MF.CHANNEL_BASE .. suffix) or nil
+end
+function MF:IsOurChannelName(name) return Canonical(name) ~= nil end
+local function NewSpare()
+    local suffix = "x"
+    for _ = 1, 6 do suffix = suffix .. string.char(96 + math.random(1, 26)) end
+    return MF.CHANNEL_BASE .. suffix
+end
+-- Is channel a the better place to be than channel b? (Both ours.)
+local function Better(a, b)
+    local ia, ib = ChannelIndex(a), ChannelIndex(b)
+    if ia and ib then return ia < ib end
+    if ia or ib then return ia ~= nil end
+    return a:lower() < b:lower()
+end
+local function Joined(name)
+    local id = GetChannelName(name)
+    return type(id) == "number" and id > 0
+end
+-- The first list name that has not refused us lately; nil when they all have.
+local function NextOpenName(now)
+    for i = 1, FALLBACKS do
+        local name = ChannelName(i)
+        local at = lockedAt[name:lower()]
+        if not at or now - at >= RECHECK then return name end
+    end
+end
 
 -- The game's "enter the password for <channel>" box. Seen in game: it does appear when the
 -- addon's own join is refused, and it stays until the player answers it. Three ways to find
@@ -322,7 +376,7 @@ function MF:IsOurChannelName(name) return ChannelIndex(name) ~= nil end
 local POPUP = "CHAT_CHANNEL_PASSWORD"
 local function Ours(dialog)
     local data = type(dialog) == "table" and dialog.data or nil
-    return type(data) ~= "string" or ChannelIndex(data) ~= nil
+    return type(data) ~= "string" or Canonical(data) ~= nil
 end
 local function CloseDialog(dialog, how)
     if type(dialog) ~= "table" or dialog.which ~= POPUP or not Ours(dialog) then return false end
@@ -364,14 +418,18 @@ local expectingBox = -math.huge
 if type(hooksecurefunc) == "function" and type(StaticPopup_Show) == "function" and not MF.inert then
     MF.passwordBoxHook = pcall(hooksecurefunc, "StaticPopup_Show", function(which, channel)
         if which ~= POPUP then return end
-        if ChannelIndex(channel) or GetTime() - expectingBox < 2 then HidePasswordBox() end
+        if Canonical(channel) or GetTime() - expectingBox < 2 then HidePasswordBox() end
     end)
 end
 
+local candidate          -- a better channel we have asked to join and not heard back about
+local suggested = {}     -- name, lower case -> true: a peer told us of it and we asked
+local peerRefused = 0    -- how many of those refused us; after three we stop taking suggestions
+local sparesMade = 0
+
 function MF:ChannelLocked(name, why)
-    local index = ChannelIndex(name)
-    if not index then return end
-    name = ChannelName(index)
+    name = Canonical(name)
+    if not name then return end
     -- The game's own handler for the same event may run after ours, or a little later.
     expectingBox = GetTime()
     HidePasswordBox()
@@ -381,22 +439,24 @@ function MF:ChannelLocked(name, why)
     local key, now = name:lower(), GetTime()
     local fresh = not lockedAt[key] or now - lockedAt[key] > 5 -- the event and the notice arrive as a pair
     lockedAt[key] = now
+    if candidate and candidate:lower() == key then candidate = nil end
+    if suggested[key] then suggested[key] = nil peerRefused = peerRefused + 1 end
     if not fresh then return end
     self.channelLocks = (self.channelLocks or 0) + 1
     self.lastChannelLock = name .. " " .. tostring(why)
-    if key ~= tostring(self.CHANNEL):lower() then return end -- an earlier name asked for again: still locked
-    local nextIndex = index + 1
-    while nextIndex <= FALLBACKS do
-        local at = lockedAt[ChannelName(nextIndex):lower()]
-        if not at or now - at >= RECHECK then break end
-        nextIndex = nextIndex + 1
-    end
+    if key ~= tostring(self.CHANNEL):lower() then return end -- not the one we are settling in: nothing to move
     local state = self.discoveryJoin
-    if nextIndex > FALLBACKS then
-        if state then state.error = "every channel name is locked" state.nextAt = now + RECHECK end
-        return
+    local nextName = NextOpenName(now)
+    if not nextName then
+        -- The whole list is locked. A name made up on the spot cannot have been.
+        if sparesMade >= 2 then
+            if state then state.error = "every channel name is locked" state.nextAt = now + RECHECK end
+            return
+        end
+        sparesMade = sparesMade + 1
+        nextName = NewSpare()
     end
-    self.CHANNEL = ChannelName(nextIndex)
+    self.CHANNEL = nextName
     if not lockTold then
         lockTold = true
         self:Print("Someone has locked the channel this addon uses to find other anglers. Using another one. "
@@ -418,36 +478,139 @@ pcall(MF.On, MF, "CHAT_MSG_CHANNEL_NOTICE", function(self, notice, _, _, prefixe
     end
 end)
 
--- In a later name: get back to an earlier one as soon as it opens.
-local lowerCheckAt = 0
+-- We are in `name`, and it is a better place than MF.CHANNEL: make it ours.
+local function Settle(self, name)
+    local old = self.CHANNEL
+    self.CHANNEL, lockedAt[name:lower()], suggested[name:lower()] = name, nil, nil
+    if candidate == name then candidate = nil end
+    if old:lower() ~= name:lower() and Joined(old) and type(LeaveChannelByName) == "function" then pcall(LeaveChannelByName, old) end
+    local state = self.discoveryJoin
+    if state then state.joined, state.error = false, nil end -- so the next health check announces the channel and scans it
+end
+local function ShouldSettle(self, name)
+    return name:lower() ~= self.CHANNEL:lower() and Joined(name) and (not Joined(self.CHANNEL) or Better(name, self.CHANNEL))
+end
+-- Ask to join a channel without giving up the one we have. MF.CHANNEL only changes once we
+-- are in. Whatever the answer, the name is not asked for again for RECHECK seconds.
+local function Ask(self, name, now)
+    lockedAt[name:lower()] = now
+    candidate = name
+    if type(JoinTemporaryChannel) == "function" then pcall(JoinTemporaryChannel, name) end
+    if C_Timer and C_Timer.After then
+        C_Timer.After(3, function() if self.discoveryJoin and ShouldSettle(self, name) then Settle(self, name) end end)
+    end
+end
+
+-- What goes on the end of WHO and HERE: "3" for the third list name, "xkqzpab" for a spare,
+-- "" when we are in none.
+function MF:FinderChannelForWire()
+    local name = self.CHANNEL
+    if not self.db or not self.db.settings.channel or not Joined(name) then return "" end
+    local index = ChannelIndex(name)
+    return index and tostring(index) or SpareSuffix(name) or ""
+end
+local function FromWire(field)
+    if type(field) ~= "string" then return nil end
+    local n = field:match("^%d%d?$") and tonumber(field)
+    if n and n >= 1 and n <= FALLBACKS then return ChannelName(n) end
+    if field:match("^x%l%l%l%l%l%l$") then return MF.CHANNEL_BASE .. field end
+end
+local helpAsked = {} -- angler key -> true: told us their channel, or we have asked them
+local suggestedAt = -math.huge
+function MF:NotePeerChannel(sender, field)
+    local name = FromWire(field)
+    if not name or type(sender) ~= "string" or (self.IsMe and self:IsMe(sender)) then return end
+    helpAsked[self:AnglerKey(sender)] = true
+    self.peerChannels = (self.peerChannels or 0) + 1
+    self.lastPeerChannel = name
+    if not self.db or not self.db.settings.channel or not self.discoveryJoin then return end
+    if name:lower() == self.CHANNEL:lower() then return end
+    if Joined(self.CHANNEL) and not Better(name, self.CHANNEL) then return end -- they should come to us; they will hear ours
+    local now = GetTime()
+    local at = lockedAt[name:lower()]
+    if (at and now - at < RECHECK) or peerRefused >= 3 or now - suggestedAt < 30 then return end
+    suggestedAt = now
+    suggested[name:lower()] = true
+    Ask(self, name, now)
+end
+
+-- Saved for this world (World.lua keeps it with the world's other data), tried first next login.
+function MF:RememberChannel()
+    if not self.db or self.channelBaseOverridden then return end
+    local name = Canonical(self.CHANNEL)
+    self.db.finderChannel = name and name ~= self.CHANNEL_BASE and name or nil
+end
+local loginAt
+MF:On("TFL_LOGIN", function(self)
+    loginAt = GetTime()
+    local saved = self.db and self.db.finderChannel
+    saved = type(saved) == "string" and Canonical(saved) or nil
+    if saved then self.CHANNEL = saved end -- if it refuses us now, the walk starts from the top of the list
+end)
+
+-- No channel, or one of our own making: ask the anglers we meet where everyone is.
+local function Stranded(self)
+    return self.db and self.db.settings.channel and self.discoveryJoin
+        and (not Joined(self.CHANNEL) or SpareSuffix(self.CHANNEL) ~= nil) and true or false
+end
+local function AskWhere(self, name)
+    self:Whisper(name, "WHO", self.Version and self.Version() or "?", self.BuildNumber and self.BuildNumber() or "", self:FinderChannelForWire())
+end
+local metAt, metCount = -math.huge, 0
+function MF:MetPeer(sender)
+    if type(sender) ~= "string" or not Stranded(self) then return end
+    local key, now = self:AnglerKey(sender), GetTime()
+    if key == "" or helpAsked[key] or now - metAt < 10 or metCount >= 20 then return end
+    helpAsked[key], metAt, metCount = true, now, metCount + 1
+    AskWhere(self, sender)
+end
+
+local lowerCheckAt, recheckAt = 0, -math.huge
+local askedSeen, cityTold = false, false
 MF:OnTick(function(self)
     local now = GetTime()
     if now < lowerCheckAt then return end
     lowerCheckAt = now + 30
-    local index = ChannelIndex(self.CHANNEL) or 1
-    if index <= 1 or not self.db or not self.db.settings.channel or not self.discoveryJoin then return end
-    for i = 1, index - 1 do
+    if not self.db or not self.db.settings.channel or not self.discoveryJoin then return end
+    -- An earlier ask went through, or we are sitting in a list name better than ours.
+    if candidate and ShouldSettle(self, candidate) then return Settle(self, candidate) end
+    local index = ChannelIndex(self.CHANNEL)
+    local below = index and index - 1 or FALLBACKS -- list names better than where we are
+    for i = 1, below do
         local name = ChannelName(i)
-        local id = GetChannelName(name)
-        if type(id) == "number" and id > 0 then -- an earlier ask went through
-            local old = self.CHANNEL
-            self.CHANNEL, lockedAt[name:lower()] = name, nil
-            if type(LeaveChannelByName) == "function" then
-                local oldID = GetChannelName(old)
-                if type(oldID) == "number" and oldID > 0 then pcall(LeaveChannelByName, old) end
+        if ShouldSettle(self, name) then return Settle(self, name) end
+    end
+    if loginAt and Stranded(self) then
+        local since = now - loginAt
+        if not askedSeen and since >= 105 then
+            askedSeen = true
+            local list = {}
+            for _, a in pairs(self.db.anglersSeen or {}) do
+                if type(a) == "table" and type(a.name) == "string" and tonumber(a.at) then list[#list + 1] = a end
             end
-            self.discoveryJoin.joined = false -- so the next health check announces the channel and scans it
-            return
+            table.sort(list, function(x, y) return x.at > y.at end)
+            for i = 1, math.min(3, #list) do
+                helpAsked[self:AnglerKey(list[i].name)] = true
+                AskWhere(self, list[i].name)
+            end
+        end
+        if not cityTold and since >= 210 and (self.peerChannels or 0) == 0 then
+            cityTold = true
+            self:Print("Still looking for other anglers: the usual channel is locked and nobody you know has answered. "
+                .. "Head to a major city. The addon picks up anglers near you there and joins them.")
         end
     end
-    for i = 1, index - 1 do
+    -- In a later name: ask for one earlier name again, the one not asked for longest.
+    if below < 1 or not Joined(self.CHANNEL) or now - recheckAt < RECHECK then return end
+    local pick, pickAt
+    for i = 1, below do
         local name = ChannelName(i)
-        local at = lockedAt[name:lower()]
-        if not at or now - at >= RECHECK then
-            lockedAt[name:lower()] = now -- asked: whatever the answer, not again for RECHECK
-            if type(JoinTemporaryChannel) == "function" then pcall(JoinTemporaryChannel, name) end
-            return
-        end
+        local at = lockedAt[name:lower()] or -math.huge
+        if now - at >= RECHECK and (not pickAt or at < pickAt) then pick, pickAt = name, at end
+    end
+    if pick then
+        recheckAt = now
+        Ask(self, pick, now)
     end
 end)
 

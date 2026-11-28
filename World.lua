@@ -23,6 +23,7 @@ MF.WORLD_KEYS = {
     "poolAtlas", "poolTidy", "frenzyDiscoveries",
     "skillUps", "skillUpsBaseline", "skillUpsHeard", "skillUpsSplit", "catchSkill", "catchSkillHeard",
     "newZones", "zoneSurvey", "syncReports",
+    "finderChannel", -- the channel this world's anglers were last found in, when not the usual one
 }
 -- Everything else is the player's own and the same in every world. Listed so a test can tell
 -- when a new key appears that nobody has sorted yet.

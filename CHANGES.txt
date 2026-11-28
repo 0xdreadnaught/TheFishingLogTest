@@ -6,6 +6,33 @@ CurseForge. This build only sees anglers who run the test build.
 Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
 X-Build line in the toc and shows in the journal title and diagnostics.
 
+Build 24 - finding the others when the channel list is locked
+- The 20 fallback names are in the source, so somebody could lock all of
+  them, and a longer list only costs every player more refused joins. So:
+- WHO and HERE end with the finder channel the sender is in: "3" for the
+  third list name, "xkqzpab" for a spare, nothing if in none. A copy that
+  hears of a better channel than its own asks to join it and moves when it
+  gets in. Better means an earlier list name; any list name over a spare;
+  between two spares, the one that sorts first.
+- When the whole list is locked, the addon makes a spare channel: the base
+  name, "x" and six random letters. Nobody can lock a name ahead of time
+  that did not exist.
+- The channel a character ended up in is saved for its region and rule set
+  and tried first at the next login, followed by one look at the top of the
+  list, in place of walking the locked names again.
+- A copy with no channel, or on a spare, whispers WHO to anglers it meets
+  (the existing tooltip and nameplate lookups find them) and, two minutes
+  after login, to the three it heard from most recently. If nobody has
+  answered after three and a half minutes it suggests heading to a major
+  city, once.
+- From a later name, one earlier name is asked for again per half hour
+  (the one not asked for longest), where build 20 asked for each of them.
+- Suggestions from other players that turn out locked are tried at most
+  three times a session and no more than one per 30 seconds.
+- /tfl clientdiag has a "finder channel" line.
+- Known limit: players inside a channel that is locked after they joined
+  cannot tell, so newcomers end up elsewhere until whisper sync links them.
+
 Build 23 - build 22's change taken back out
 - Tested in game: taking the chat windows off the password-request event did
   not stop the box's opening sound, so that code is removed. Behaviour is

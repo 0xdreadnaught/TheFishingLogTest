@@ -281,6 +281,7 @@ function MF:ChannelBaseTest(name)
     if not (self.JoinChannel and self.CHANNEL_BASE and C_Timer and C_Timer.After) then return say("this copy has no fallback to try.") end
     if JoinedNumber(self.CHANNEL) and type(LeaveChannelByName) == "function" then pcall(LeaveChannelByName, self.CHANNEL) end
     self.CHANNEL_BASE, self.CHANNEL = name, name
+    self.channelBaseOverridden = true -- nothing from this session is remembered as the real channel
     self.discoveryJoin = { attempts = 0, last = -math.huge, nextAt = 0, readyAt = 0 }
     local locksBefore, boxesBefore = self.channelLocks or 0, self.passwordBoxesClosed or 0
     say("for this session the finder channel is " .. name .. ". Asking to join it now; watch for a password box. /reload undoes this.")
@@ -389,6 +390,9 @@ function MF:WorldProbeLines()
     Line("channel slots", "stated limit " .. tostring(MAX_WOW_CHAT_CHANNELS) .. " | joined now " .. tostring(ChannelsJoined())
         .. " | ours is " .. tostring(self.CHANNEL) .. ", number " .. tostring(JoinedNumber(self.CHANNEL or ""))
         .. " | locked names met " .. tostring(self.channelLocks or 0) .. " | password boxes closed " .. tostring(self.passwordBoxesClosed or 0))
+    Line("finder channel", tostring(self.CHANNEL) .. " | told to others as " .. Show(self.FinderChannelForWire and self:FinderChannelForWire() or nil)
+        .. " | remembered " .. Show(self.db and self.db.finderChannel) .. " | channels heard from others " .. tostring(self.peerChannels or 0)
+        .. " | last " .. tostring(self.lastPeerChannel))
     Line("password box", "closed by " .. tostring(self.passwordBoxClosedBy) .. " | show hook " .. tostring(self.passwordBoxHook)
         .. " | StaticPopup_Visible gave " .. tostring(self.passwordBoxSeenAs)
         .. " | walker " .. type(StaticPopup_ForEachShownDialog) .. " | StaticPopup1 " .. type(StaticPopup1)

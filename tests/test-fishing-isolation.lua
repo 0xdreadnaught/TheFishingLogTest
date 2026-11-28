@@ -131,12 +131,19 @@ test("WHO and HERE end with the build number, and a WHO or HERE without one is s
         for _ = 1, 10 do F.advance(1); pump() end
         local here
         for _, m in ipairs(wire) do if m.msg:find("~HERE~", 1, true) then here = m.msg end end
-        assert(here and here:find("~1%.1%.2~12$"), "HERE should end with the counting floor then the build: " .. tostring(here))
+        assert(here and here:find("~1%.1%.2~12~$"), "HERE should end with the counting floor, the build, then the channel (none here): " .. tostring(here))
+        -- the channel a peer says it is in reaches the lock code, from WHO and from HERE
+        local told = {}
+        function c:NotePeerChannel(sender, field) told[#told + 1] = sender .. "=" .. tostring(field) end
+        c:Fire("CHAT_MSG_ADDON", c.PREFIX, "LIVE2~1~?~WHO~1.1.4~24~3", "WHISPER", "Asker")
+        c:Fire("CHAT_MSG_ADDON", c.PREFIX, "LIVE2~1~?~HERE~1.1.4~3~1458~H~100~~50~1.1.2~24~xkqzpab", "WHISPER", "Teller")
+        assert(told[1] == "Asker=3" and told[2] == "Teller=xkqzpab", table.concat(told, " "))
+        c.NotePeerChannel = nil
         -- from a build that doesn't send one (10 to 15)
         c:Fire("CHAT_MSG_ADDON", c.PREFIX, "LIVE2~1~?~WHO~1.1.4", "WHISPER", "Older")
         c:Fire("CHAT_MSG_ADDON", c.PREFIX, "LIVE2~1~?~HERE~1.1.4~3~1458~H~100~~50~1.1.2", "WHISPER", "Older")
         c:Fire("CHAT_MSG_ADDON", c.PREFIX, "LIVE2~1~?~HERE~1.1.4~3~1458~H~100~~50~1.1.2~15", "WHISPER", "Newer")
-        assert(heard[2] == "Older=nil" and heard[3] == "Older=nil" and heard[4] == "Newer=15", table.concat(heard, " "))
+        assert(heard[4] == "Older=nil" and heard[5] == "Older=nil" and heard[6] == "Newer=15", table.concat(heard, " "))
     end)
     GetAddOnMetadata = meta
     assert(ok, err)
@@ -395,6 +402,7 @@ test("a locked channel: the password box is closed, the next name is used, and i
         settle(10)
         assert(table.concat(asked, ",") == "TheFishingLogTest,TheFishingLogTest2,TheFishingLogTest3", table.concat(asked, ","))
         assert(c.CHANNEL == "TheFishingLogTest3" and inside.TheFishingLogTest3, "should have settled in the first open name")
+        assert(c.db.finderChannel == "TheFishingLogTest3" and c:FinderChannelForWire() == "3", "remembered, and told to others as 3")
         assert(not dialog.shown and c.passwordBoxesClosed == 2 and c.passwordBoxClosedBy == "numbered frame", "a password box was left on screen")
         assert(c.channelLocks == 2 and #said == 1 and said[1]:find("locked the channel", 1, true), "told once: " .. #said)
         assert(c:DiscoveryJoinStatus():find("TheFishingLogTest3", 1, true), c:DiscoveryJoinStatus())
@@ -425,7 +433,8 @@ test("a locked channel: the password box is closed, the next name is used, and i
             and report:find("Box on screen now: no", 1, true), report)
         -- back to the real names for the rest of this test
         LeaveChannelByName("TFLLockTest2"); left = {}
-        c.CHANNEL_BASE, c.CHANNEL = "TheFishingLogTest", "TheFishingLogTest3"
+        assert(c.db.finderChannel == "TheFishingLogTest3", "a stand-in name must not be remembered as the real channel: " .. tostring(c.db.finderChannel))
+        c.CHANNEL_BASE, c.CHANNEL, c.channelBaseOverridden = "TheFishingLogTest", "TheFishingLogTest3", nil
         inside.TheFishingLogTest3 = 9
         said = { "told once" }
 
@@ -433,9 +442,13 @@ test("a locked channel: the password box is closed, the next name is used, and i
         lockedNames.TheFishingLogTest = nil
         asked = {}
         settle(1900)
+        assert(#asked == 1, "one earlier name per half hour, asked: " .. table.concat(asked, ","))
+        settle(1900)
         assert(c.CHANNEL == "TheFishingLogTest" and inside.TheFishingLogTest, "should have moved back, is in " .. c.CHANNEL)
+        settle(6)
+        assert(c.db.finderChannel == nil, "back in the usual channel: nothing to remember")
         assert(left[1] == "TheFishingLogTest3" and not inside.TheFishingLogTest3, "should leave the name it no longer needs")
-        assert(#asked <= 2 and asked[#asked] == "TheFishingLogTest", "one ask per earlier name per half hour: " .. table.concat(asked, ","))
+        assert(table.concat(asked, ",") == "TheFishingLogTest2,TheFishingLogTest", "the one not asked for longest goes first: " .. table.concat(asked, ","))
         assert(#said == 1, "moving back is not announced")
         assert(not dialog.shown)
     end)
@@ -443,7 +456,7 @@ test("a locked channel: the password box is closed, the next name is used, and i
     assert(ok, err)
 end)
 
-test("when every name is locked it stops asking, and no box is left up", function()
+test("when the whole list is locked it makes a spare; if even spares are refused it stops, and no box is left up", function()
     local names = { "GetChannelName", "JoinTemporaryChannel", "StaticPopup_Visible", "StaticPopup_Hide", "StaticPopup1" }
     local saved = {}
     for _, n in ipairs(names) do saved[n] = _G[n] end
@@ -464,8 +477,8 @@ test("when every name is locked it stops asking, and no box is left up", functio
         c.discoveryJoin = { attempts = 0, last = -math.huge, nextAt = 0, readyAt = 0 }
         c:JoinChannel(true)
         for _ = 1, 120 do F.advance(1); F.flush(); for _, fn in ipairs(c.ticks) do fn(c) end end
-        assert(asked == 20, "asked " .. asked .. " times in two minutes; expected each of the 20 names once")
-        assert(c.CHANNEL == "TheFishingLogTest20" and box == nil)
+        assert(asked == 22, "asked " .. asked .. " times in two minutes; expected the 20 names once each, then two spares")
+        assert(c.CHANNEL:find("^TheFishingLogTestx%l%l%l%l%l%l$") and c:IsOurChannelName(c.CHANNEL) and box == nil, c.CHANNEL)
         assert(c.discoveryJoin.error == "every channel name is locked", tostring(c.discoveryJoin.error))
     end)
     for _, n in ipairs(names) do _G[n] = saved[n] end
@@ -506,6 +519,164 @@ test("the password box is closed as it opens, on a client that only has the dial
     end)
     for _, n in ipairs(names) do _G[n] = saved[n] end
     assert(ok, err)
+end)
+
+-- A client for the channel tests: some names locked, joins answered a moment later as in the game.
+local function ChannelWorld(c, locked)
+    local w = { inside = {}, asked = {}, left = {}, locked = locked or {}, nextID = 5, said = {}, whispers = {} }
+    c.db.settings.channel = true
+    function c:Print(msg) w.said[#w.said + 1] = msg end
+    GetChannelName = function(name) return w.inside[name] or 0, name end
+    JoinTemporaryChannel = function(name)
+        w.asked[#w.asked + 1] = name
+        if w.locked[name] or w.locked.all then C_Timer.After(0, function() c:Fire("CHANNEL_PASSWORD_REQUEST", name) end)
+        else w.nextID = w.nextID + 1; w.inside[name] = w.nextID end
+    end
+    LeaveChannelByName = function(name) w.left[#w.left + 1] = name; w.inside[name] = nil end
+    local whisper = c.Whisper
+    function c:Whisper(to, ...) w.whispers[#w.whispers + 1] = to .. ":" .. table.concat({ ... }, "~"); return whisper(self, to, ...) end
+    function w.settle(seconds) for _ = 1, seconds do F.advance(1); F.flush(); for _, fn in ipairs(c.ticks) do fn(c) end end end
+    function w.start() c.discoveryJoin = { attempts = 0, last = -math.huge, nextAt = 0, readyAt = 0 }; c:JoinChannel(true); w.settle(4) end
+    return w
+end
+local CHANNEL_GLOBALS = { "GetChannelName", "JoinTemporaryChannel", "LeaveChannelByName", "StaticPopup1", "StaticPopup_Visible", "StaticPopup_Hide" }
+local function WithChannelGlobals(fn)
+    local saved = {}
+    for _, n in ipairs(CHANNEL_GLOBALS) do saved[n] = _G[n] end
+    StaticPopup1, StaticPopup_Visible, StaticPopup_Hide = nil, nil, nil
+    local ok, err = pcall(fn)
+    for _, n in ipairs(CHANNEL_GLOBALS) do _G[n] = saved[n] end
+    assert(ok, err)
+end
+
+test("a peer's channel: a better one is joined and moved to, a worse or refused one is not", function()
+    WithChannelGlobals(function()
+        local c = Client()
+        local w = ChannelWorld(c, { TheFishingLogTest = true, TheFishingLogTest2 = true })
+        w.start(); w.settle(6)
+        assert(c.CHANNEL == "TheFishingLogTest3" and c:FinderChannelForWire() == "3")
+        w.asked = {}
+        -- junk, our own channel, a later list name and a spare are all no reason to move
+        for _, field in ipairs({ "", "0", "21", "abc", "x", "xABCDEF", "xabcde", "xabcdefg", "3", "7", "xaaaaaa" }) do c:NotePeerChannel("Peer", field) end
+        c:NotePeerChannel("Local", "1") -- something we said ourselves
+        assert(#w.asked == 0, "asked to join for a channel that is no better: " .. table.concat(w.asked, ","))
+        -- an earlier list name we were refused a moment ago: not asked again yet
+        c:NotePeerChannel("Peer", "2")
+        assert(#w.asked == 0, "asked again for a name that just refused us")
+        assert(c.peerChannels == 4, "the four well-formed ones (3, 7, a spare, 2) are counted, got " .. tostring(c.peerChannels))
+
+        -- from a spare, with the list locked: a peer in a list name that has opened is worth joining
+        local d = Client()
+        local locked = {}
+        for i = 1, 20 do locked[i == 1 and "TheFishingLogTest" or ("TheFishingLogTest" .. i)] = true end
+        local w2 = ChannelWorld(d, locked)
+        w2.start(); w2.settle(60)
+        local spare = d.CHANNEL
+        assert(spare:find("x%l%l%l%l%l%l$") and w2.inside[spare], spare)
+        locked.TheFishingLogTest5 = nil
+        w2.settle(1800) -- past the half hour in which a refused name is left alone
+        assert(d.CHANNEL == spare, "the addon's own half-hourly look starts at the top of the list and has not reached 5")
+        w2.asked = {}
+        d:NotePeerChannel("Peer", "5")
+        assert(w2.asked[1] == "TheFishingLogTest5" and d.CHANNEL == spare, "asks without giving up the channel it has")
+        w2.settle(4)
+        assert(d.CHANNEL == "TheFishingLogTest5" and w2.left[#w2.left] == spare and not w2.inside[spare], "should have moved, is in " .. d.CHANNEL)
+        w2.settle(6)
+        assert(d:FinderChannelForWire() == "5" and d.db.finderChannel == "TheFishingLogTest5")
+    end)
+end)
+
+test("suggestions that turn out locked are tried at most three times a session, 30 seconds apart", function()
+    WithChannelGlobals(function()
+        local c = Client()
+        local w = ChannelWorld(c, { TheFishingLogTest = true, TheFishingLogTest2 = true, TheFishingLogTest3 = true, TheFishingLogTest4 = true, TheFishingLogTest5 = true })
+        w.start(); w.settle(12)
+        assert(c.CHANNEL == "TheFishingLogTest6", c.CHANNEL)
+        -- a liar names channels on the list... (all refused moments ago: never asked)
+        w.asked = {}
+        for n = 1, 5 do c:NotePeerChannel("Liar", tostring(n)); w.settle(31) end
+        assert(#w.asked == 0, table.concat(w.asked, ","))
+        -- ...we move to a spare, and the liar names locked spares that sort before ours
+        w.locked.TheFishingLogTest6 = true
+        for i = 7, 20 do w.locked["TheFishingLogTest" .. i] = true end
+        w.inside.TheFishingLogTest6 = nil -- a ban puts you out
+        c:ChannelLocked("TheFishingLogTest6", "BANNED"); w.settle(60)
+        assert(c.CHANNEL:find("x%l%l%l%l%l%l$") and w.inside[c.CHANNEL], "should be in a spare of its own: " .. c.CHANNEL)
+        w.locked.all = true
+        w.asked = {}
+        c:NotePeerChannel("Liar", "xaaaaaa"); c:NotePeerChannel("Liar", "xaaaaab")
+        assert(#w.asked == 1, "two asks inside 30 seconds")
+        for _, suffix in ipairs({ "xaaaaab", "xaaaaac", "xaaaaad", "xaaaaae", "xaaaaaf" }) do w.settle(31); c:NotePeerChannel("Liar", suffix) end
+        assert(#w.asked == 3, "expected three tries in all, got " .. #w.asked .. ": " .. table.concat(w.asked, ","))
+        assert(w.inside[c.CHANNEL], "and it kept the channel it had")
+    end)
+end)
+
+test("the whole list locked: a spare is made, remembered for next login, and anglers met are asked where everyone is", function()
+    WithChannelGlobals(function()
+        local c = Client()
+        local locked = {}
+        for i = 1, 20 do locked[i == 1 and "TheFishingLogTest" or ("TheFishingLogTest" .. i)] = true end
+        local w = ChannelWorld(c, locked)
+        c.db.anglersSeen = { a = { name = "Old Friend", at = 10 }, b = { name = "New Friend", at = 30 }, c = { name = "Mid Friend", at = 20 }, d = { name = "Ancient", at = 1 } }
+        c:Fire("TFL_LOGIN")
+        w.start(); w.settle(60)
+        assert(#w.asked == 21, "20 list names and one spare, asked " .. #w.asked)
+        local spare = c.CHANNEL
+        assert(spare:find("^TheFishingLogTestx%l%l%l%l%l%l$") and w.inside[spare], spare)
+        assert(c.db.finderChannel == spare and c:FinderChannelForWire() == spare:match("x%l+$"))
+        assert(#w.said == 1, "the lock is mentioned once: " .. #w.said)
+        -- on a spare of its own making it asks the anglers it meets, once each, not faster than one in 10 seconds
+        w.whispers = {}
+        c:MetPeer("Stranger"); c:MetPeer("Stranger"); c:MetPeer("Second")
+        assert(#w.whispers == 1 and w.whispers[1]:find("^Stranger:WHO~1%.1%.4~") and w.whispers[1]:find("~" .. spare:match("x%l+$") .. "$"), table.concat(w.whispers, " | "))
+        -- two minutes in, the three anglers heard from most recently are asked too
+        w.settle(60)
+        local who = table.concat(w.whispers, " | ")
+        assert(who:find("New Friend:WHO", 1, true) and who:find("Mid Friend:WHO", 1, true) and who:find("Old Friend:WHO", 1, true) and not who:find("Ancient", 1, true), who)
+        -- nobody answers: suggest a city, once
+        w.settle(120)
+        assert(#w.said == 2 and w.said[2]:find("major city", 1, true), tostring(w.said[2]))
+        w.settle(600); assert(#w.said == 2)
+        -- an angler met in the city is in another spare that sorts first: join them
+        c:NotePeerChannel("City Angler", "xaaaaaa")
+        w.settle(4)
+        assert(c.CHANNEL == "TheFishingLogTestxaaaaaa" and w.left[#w.left] == spare, c.CHANNEL)
+        w.settle(6)
+        assert(c.db.finderChannel == "TheFishingLogTestxaaaaaa")
+
+        -- next login: the remembered name is tried first, with no walk through the locked list
+        local d = Client()
+        d.db.finderChannel = "TheFishingLogTestxaaaaaa"
+        local w2 = ChannelWorld(d, locked)
+        d:Fire("TFL_LOGIN")
+        w2.start()
+        assert(w2.asked[1] == "TheFishingLogTestxaaaaaa" and d.CHANNEL == w2.asked[1] and w2.inside[d.CHANNEL], table.concat(w2.asked, ","))
+        w2.settle(120)
+        assert(table.concat(w2.asked, ",") == "TheFishingLogTestxaaaaaa,TheFishingLogTest", "then one look at the top of the list, not a walk: " .. table.concat(w2.asked, ","))
+        -- and a remembered name that is somebody else's, or junk, is ignored
+        for _, bad in ipairs({ "Trade", "TheFishingLogTest21", "TheFishingLogTestxABC", 7 }) do
+            local e = Client(); e.db.finderChannel = bad; e:Fire("TFL_LOGIN")
+            assert(e.CHANNEL == "TheFishingLogTest", tostring(bad) .. " -> " .. e.CHANNEL)
+        end
+    end)
+end)
+
+test("a copy that is in the usual channel asks nobody and suggests nothing", function()
+    WithChannelGlobals(function()
+        local c = Client()
+        local w = ChannelWorld(c, {})
+        c.db.anglersSeen = { a = { name = "Friend", at = 10 } }
+        c:Fire("TFL_LOGIN")
+        w.start(); w.settle(8)
+        assert(c.CHANNEL == "TheFishingLogTest" and c:FinderChannelForWire() == "1")
+        w.whispers = {}
+        c:MetPeer("Stranger"); w.settle(400)
+        assert(#w.whispers == 0 and #w.said == 0 and #w.asked == 1, #w.whispers .. " whispers, " .. #w.said .. " lines")
+        -- with the channel setting off, nothing is said about channels at all
+        c.db.settings.channel = false
+        assert(c:FinderChannelForWire() == "")
+    end)
 end)
 
 test("world probe reports what the client says and survives a client that says nothing", function()
