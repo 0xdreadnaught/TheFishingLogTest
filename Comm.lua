@@ -229,7 +229,6 @@ function MF:JoinChannel(manual)
     state.nextAt=now+(state.attempts==1 and 15 or state.attempts==2 and 60 or 300)
     if type(JoinTemporaryChannel)~="function" then state.error="channel join API unavailable"
     else
-        if self.ExpectChannelAnswer then self:ExpectChannelAnswer() end
         local ok=pcall(JoinTemporaryChannel,self.CHANNEL)
         state.error=ok and "the client has not confirmed membership" or "the client rejected the join request"
     end
@@ -369,44 +368,6 @@ if type(hooksecurefunc) == "function" and type(StaticPopup_Show) == "function" a
     end)
 end
 
--- Closing the box after it opens still lets it make its opening sound (heard in game on
--- build 21). The box is opened by the game's chat windows when they hear the password
--- request. So for a few seconds after each join the addon asks for, the chat windows are
--- taken off that one event and we answer it instead: ours is dealt with silently, and a
--- request about a channel of the player's own is handed to the chat window as usual.
--- The hook above stays as the net if this client opens the box from somewhere else.
-local LOCK_EVENT = "CHANNEL_PASSWORD_REQUEST"
-local QUIET_FOR = 5
-local quieted, quietUntil = {}, 0
-local function EndQuiet()
-    for i = #quieted, 1, -1 do
-        pcall(quieted[i].RegisterEvent, quieted[i], LOCK_EVENT)
-        quieted[i] = nil
-    end
-end
-function MF:ExpectChannelAnswer()
-    if self.inert then return end
-    for i = 1, tonumber(NUM_CHAT_WINDOWS) or 10 do
-        local f = _G["ChatFrame" .. i]
-        if type(f) == "table" and type(f.IsEventRegistered) == "function" and type(f.UnregisterEvent) == "function" then
-            local ok, on = pcall(f.IsEventRegistered, f, LOCK_EVENT)
-            if ok and on and pcall(f.UnregisterEvent, f, LOCK_EVENT) then quieted[#quieted + 1] = f end
-        end
-    end
-    self.passwordEventQuieted = #quieted
-    quietUntil = GetTime() + QUIET_FOR
-    if C_Timer and C_Timer.After then
-        C_Timer.After(QUIET_FOR + 0.1, function() if GetTime() >= quietUntil then EndQuiet() end end)
-    end
-end
-MF:OnTick(function() if #quieted > 0 and GetTime() >= quietUntil then EndQuiet() end end) -- the timer's backstop
--- The chat window's own answer to a request we intercepted that was not about us.
-local function HandBack(name)
-    local f = quieted[1]
-    local handler = f and type(f.GetScript) == "function" and f:GetScript("OnEvent")
-    if handler then pcall(handler, f, LOCK_EVENT, name) end
-end
-
 function MF:ChannelLocked(name, why)
     local index = ChannelIndex(name)
     if not index then return end
@@ -450,9 +411,7 @@ function MF:ChannelLocked(name, why)
     end
 end
 -- pcall: asking a client for an event it does not have raises an error.
-pcall(MF.On, MF, LOCK_EVENT, function(self, name)
-    if ChannelIndex(name) then self:ChannelLocked(name, "PASSWORD_REQUEST") else HandBack(name) end
-end)
+pcall(MF.On, MF, "CHANNEL_PASSWORD_REQUEST", function(self, name) self:ChannelLocked(name, "PASSWORD_REQUEST") end)
 pcall(MF.On, MF, "CHAT_MSG_CHANNEL_NOTICE", function(self, notice, _, _, prefixed, _, _, _, _, base)
     if notice == "WRONG_PASSWORD" or notice == "BANNED" then
         self:ChannelLocked(type(base) == "string" and base ~= "" and base or prefixed, notice)
@@ -486,7 +445,6 @@ MF:OnTick(function(self)
         local at = lockedAt[name:lower()]
         if not at or now - at >= RECHECK then
             lockedAt[name:lower()] = now -- asked: whatever the answer, not again for RECHECK
-            self:ExpectChannelAnswer()
             if type(JoinTemporaryChannel) == "function" then pcall(JoinTemporaryChannel, name) end
             return
         end

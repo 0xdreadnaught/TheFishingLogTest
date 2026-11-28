@@ -6,6 +6,13 @@ CurseForge. This build only sees anglers who run the test build.
 Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
 X-Build line in the toc and shows in the journal title and diagnostics.
 
+Build 23 - build 22's change taken back out
+- Tested in game: taking the chat windows off the password-request event did
+  not stop the box's opening sound, so that code is removed. Behaviour is
+  build 21's again: when the finder channel is locked the addon moves to the
+  next name and the password box is closed as it opens. Its opening sound
+  can still be heard once.
+
 Build 22 - a refused join is silent
 - Tested in game on build 21: the password box no longer shows, but its
   opening sound still played, because the game opened it and the addon
