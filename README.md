@@ -51,7 +51,7 @@ The first real commit is 1.1.4 untouched (`18e3680`), then one commit per build.
 git diff 18e3680 HEAD -- . ':!tests' ':!README.md'
 ```
 
-The version line is still 1.1.4 on purpose. The build number is the `X-Build` line in the toc. It goes out as an extra last field on `WHO` and `HERE`, which is how a tester on an older build gets told to update. After it comes the finder channel the sender is in.
+The version line is still 1.1.4 on purpose. The build number is the `X-Build` line in the toc. It goes out as an extra last field on `WHO` and `HERE`, which is how a tester on an older build gets told to update. After it come the finder channel the sender is in and the channel names that refused them lately.
 
 The network split is four constants: `MF.PREFIX` and `MF.CHANNEL` in `Comm.lua`, `PREFIX` in `Rework/RealmPage.lua`, and `MACRO_NAME` in `Storage.lua`. Message formats are the same as 1.1.4 except the envelope. `LIVE1~<launch>~...` is now `LIVE2~<launch>~<world>~...`, where the world is one base-36 number for region and rule set (`1` is Americas PvP). That is `World.lua` plus the envelope lines in `Comm.lua`. The region comes from `GetCurrentRegion()` and the rule set from the `PvPRuleset`, `RPRuleset` and `HardcoreRuleset` game rules. I have only checked it on one PvP character.
 

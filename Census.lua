@@ -26,6 +26,8 @@ MF.BuildNumber = Build
 -- Test build: after the build number, the finder channel the sender is in (Comm.lua,
 -- "A locked channel"), so copies kept out of the usual one can find where the others went.
 local function Finder() return MF.FinderChannelForWire and MF:FinderChannelForWire() or "" end
+-- And after that, which of the addon's channel names refused the sender lately.
+local function Refused() return MF.RefusedChannelsForWire and MF:RefusedChannelsForWire() or "" end
 -- The version with the test build number from the toc (X-Build), for display.
 function MF.VersionLabel()
     local get = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
@@ -71,14 +73,14 @@ function MF:RequestCensus(quiet)
     local now=GetTime()
     if now-censusRequestedAt>=30 then
         censusRequestedAt=now
-        self:SendWide("WHO", Version(), Build(), Finder())
+        self:SendWide("WHO", Version(), Build(), Finder(), Refused())
         if not self.CUSTOM_CHANNEL_SUPPORTED then
             if not quiet and self.db.settings.channel and GetChannelName(self.CHANNEL)<=0 then self:JoinChannel(true) end
             self:Fire("TFL_ROSTER_SYNC")
             local peers={}
             for _,p in pairs(self:RecentCensusPlayers()) do peers[#peers+1]=p end
             table.sort(peers,function(a,b) return a.confirmedAt>b.confirmedAt end)
-            for i=1,math.min(2,#peers) do self:Whisper(peers[i].name,"WHO",Version(),Build(),Finder()) end
+            for i=1,math.min(2,#peers) do self:Whisper(peers[i].name,"WHO",Version(),Build(),Finder(),Refused()) end
         end
     end
     if not quiet then
@@ -125,18 +127,19 @@ end
 
 -- Since 1.0.8 the asker says its version too, so an angler who has just
 -- updated is known to have updated before their first new record arrives.
-function MF.handlers.WHO(self, sender, version, build, finder)
+function MF.handlers.WHO(self, sender, version, build, finder, refused)
     if self.NoteBuild then self:NoteBuild(sender, build) end
+    if self.NotePeerRefusals then self:NotePeerRefusals(sender, refused, finder) end
     if self.NotePeerChannel then self:NotePeerChannel(sender, finder) end
     if self.ValidVersion(version) then self:NoteSeen(sender, version) end
     local whisper=self.lastRoad=="WHISPER"
     self:ReplyOnce("who:" .. self:AnglerKey(sender), 0, 6, function()
         if whisper then
             self:Whisper(sender,"HERE",Version(),self:MyRank(),self:MapID(),self:MyFaction(),
-                self.cdb.profile.xp or 0,self:MyGuild(),self:TotalFishCaught(),self:CountingFloor(),Build(),Finder())
+                self.cdb.profile.xp or 0,self:MyGuild(),self:TotalFishCaught(),self:CountingFloor(),Build(),Finder(),Refused())
         else
             self:SendWide("HERE", Version(), self:MyRank(), self:MapID(), self:MyFaction(),
-                self.cdb.profile.xp or 0, self:MyGuild(), self:TotalFishCaught(), self:CountingFloor(), Build(), Finder())
+                self.cdb.profile.xp or 0, self:MyGuild(), self:TotalFishCaught(), self:CountingFloor(), Build(), Finder(), Refused())
         end
     end)
 end
@@ -165,8 +168,9 @@ function MF:NoteProgression(sender, xp, fish)
     self:RefreshJournal()
 end
 
-function MF.handlers.HERE(self, sender, version, rank, mapID, faction, xp, guild, fish, floor, build, finder)
+function MF.handlers.HERE(self, sender, version, rank, mapID, faction, xp, guild, fish, floor, build, finder, refused)
     if self.NoteBuild then self:NoteBuild(sender, build) end
+    if self.NotePeerRefusals then self:NotePeerRefusals(sender, refused, finder) end
     if self.NotePeerChannel then self:NotePeerChannel(sender, finder) end
     -- The oldest version they still count, appended in 1.0.8.
     self:NoteCountingFloor(sender, version, floor)

@@ -310,7 +310,12 @@ end)
 --     If nobody answers it suggests a major city, where there are players to meet.
 -- From a later name, one earlier name is asked for again every RECHECK seconds (the one not
 -- asked for longest), and we move back when it opens.
--- Known limit: members of a channel that is locked after they joined cannot tell.
+--   * Members of a channel that is locked after they joined cannot tell: nothing refuses
+--     them. Newcomers can. So WHO and HERE also say which names refused the sender in the
+--     last half hour. When two different anglers (or one heard over guild or group) say
+--     ours did, we go where they are, and leave ours alone for RECHECK seconds. Only what
+--     the game actually refused is ever passed on, never hearsay. At most one such move
+--     per RECHECK, so nobody can chase the realm from channel to channel.
 ------------------------------------------------------------------------
 local FALLBACKS = 20
 local RECHECK = 1800
@@ -423,6 +428,12 @@ if type(hooksecurefunc) == "function" and type(StaticPopup_Show) == "function" a
 end
 
 local candidate          -- a better channel we have asked to join and not heard back about
+local refusedAt = {}     -- name, lower case -> GetTime() the game last refused us (lockedAt also holds names merely asked for)
+local condemned = {}     -- name, lower case -> GetTime() others told us it turns newcomers away
+local function Condemned(name)
+    local at = condemned[name:lower()]
+    return at ~= nil and GetTime() - at < RECHECK
+end
 local suggested = {}     -- name, lower case -> true: a peer told us of it and we asked
 local peerRefused = 0    -- how many of those refused us; after three we stop taking suggestions
 local sparesMade = 0
@@ -438,7 +449,7 @@ function MF:ChannelLocked(name, why)
     end
     local key, now = name:lower(), GetTime()
     local fresh = not lockedAt[key] or now - lockedAt[key] > 5 -- the event and the notice arrive as a pair
-    lockedAt[key] = now
+    lockedAt[key], refusedAt[key] = now, now
     if candidate and candidate:lower() == key then candidate = nil end
     if suggested[key] then suggested[key] = nil peerRefused = peerRefused + 1 end
     if not fresh then return end
@@ -488,7 +499,8 @@ local function Settle(self, name)
     if state then state.joined, state.error = false, nil end -- so the next health check announces the channel and scans it
 end
 local function ShouldSettle(self, name)
-    return name:lower() ~= self.CHANNEL:lower() and Joined(name) and (not Joined(self.CHANNEL) or Better(name, self.CHANNEL))
+    return name:lower() ~= self.CHANNEL:lower() and Joined(name)
+        and (not Joined(self.CHANNEL) or Better(name, self.CHANNEL) or Condemned(self.CHANNEL))
 end
 -- Ask to join a channel without giving up the one we have. MF.CHANNEL only changes once we
 -- are in. Whatever the answer, the name is not asked for again for RECHECK seconds.
@@ -525,13 +537,76 @@ function MF:NotePeerChannel(sender, field)
     self.lastPeerChannel = name
     if not self.db or not self.db.settings.channel or not self.discoveryJoin then return end
     if name:lower() == self.CHANNEL:lower() then return end
-    if Joined(self.CHANNEL) and not Better(name, self.CHANNEL) then return end -- they should come to us; they will hear ours
+    if Joined(self.CHANNEL) and not Better(name, self.CHANNEL) and not Condemned(self.CHANNEL) then return end -- they should come to us; they will hear ours
     local now = GetTime()
     local at = lockedAt[name:lower()]
     if (at and now - at < RECHECK) or peerRefused >= 3 or now - suggestedAt < 30 then return end
     suggestedAt = now
     suggested[name:lower()] = true
     Ask(self, name, now)
+end
+
+-- Which of our names refused us in the last half hour, for the end of WHO and HERE: the
+-- list names as one base-36 number (bit 0 is the first name), then "." and a spare's
+-- letters if one did. "" when none. "3" = the first two; "mh33.xkqzpab" = all 20 and a spare.
+local DIGITS36 = "0123456789abcdefghijklmnopqrstuvwxyz"
+function MF:RefusedChannelsForWire()
+    if not self.db or not self.db.settings.channel then return "" end
+    local now, mask, spare, spareAt = GetTime(), 0, nil, nil
+    for i = 1, FALLBACKS do
+        local at = refusedAt[ChannelName(i):lower()]
+        if at and now - at < RECHECK then mask = mask + 2 ^ (i - 1) end
+    end
+    for key, at in pairs(refusedAt) do
+        local suffix = now - at < RECHECK and (not spareAt or at > spareAt) and SpareSuffix(key)
+        if suffix then spare, spareAt = suffix, at end
+    end
+    local out = ""
+    while mask > 0 do
+        local digit = mask % 36
+        out = DIGITS36:sub(digit + 1, digit + 1) .. out
+        mask = (mask - digit) / 36
+    end
+    return out .. (spare and ("." .. spare) or "")
+end
+
+-- A peer says which names refused it. If ours is among them we cannot tell from inside.
+local vouchers, movedOnWordAt = {}, -math.huge
+function MF:NotePeerRefusals(sender, field, theirs)
+    if type(field) ~= "string" or field == "" or #field > 12 or type(sender) ~= "string" then return end
+    if (self.IsMe and self:IsMe(sender)) or not self.db or not self.db.settings.channel or not self.discoveryJoin then return end
+    local current = self.CHANNEL
+    if not Joined(current) then return end
+    local maskText, spare = field:match("^([0-9a-z]*)%.(x%l%l%l%l%l%l)$")
+    if not maskText then maskText = field:match("^[0-9a-z]+$") end
+    if not maskText or #maskText > 4 then return end
+    local mask = tonumber(maskText, 36) or 0
+    local index = ChannelIndex(current)
+    local named
+    if index then named = math.floor(mask / 2 ^ (index - 1)) % 2 == 1
+    else named = spare ~= nil and SpareSuffix(current) == spare end
+    if not named then return end
+    local now = GetTime()
+    local road = self.lastRoad
+    vouchers[self:AnglerKey(sender)] = { at = now, to = FromWire(theirs), close = road == "GUILD" or road == "PARTY" or road == "RAID" }
+    local count, close, best = 0, false, nil
+    for key, v in pairs(vouchers) do
+        if now - v.at >= RECHECK then vouchers[key] = nil
+        else
+            count, close = count + 1, close or v.close
+            local at = v.to and lockedAt[v.to:lower()]
+            if v.to and v.to:lower() ~= current:lower() and not (at and now - at < RECHECK) and (not best or Better(v.to, best)) then best = v.to end
+        end
+    end
+    if (count < 2 and not close) or now - movedOnWordAt < RECHECK then return end
+    -- Go where the people who were turned away are; failing that, the next list name.
+    lockedAt[current:lower()] = now
+    local to = best or NextOpenName(now)
+    if not to then return end
+    movedOnWordAt, vouchers = now, {}
+    condemned[current:lower()] = now
+    self.movedOnOthersWord = (self.movedOnOthersWord or 0) + 1
+    Ask(self, to, now)
 end
 
 -- Saved for this world (World.lua keeps it with the world's other data), tried first next login.
@@ -554,7 +629,8 @@ local function Stranded(self)
         and (not Joined(self.CHANNEL) or SpareSuffix(self.CHANNEL) ~= nil) and true or false
 end
 local function AskWhere(self, name)
-    self:Whisper(name, "WHO", self.Version and self.Version() or "?", self.BuildNumber and self.BuildNumber() or "", self:FinderChannelForWire())
+    self:Whisper(name, "WHO", self.Version and self.Version() or "?", self.BuildNumber and self.BuildNumber() or "",
+        self:FinderChannelForWire(), self:RefusedChannelsForWire())
 end
 local metAt, metCount = -math.huge, 0
 function MF:MetPeer(sender)

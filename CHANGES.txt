@@ -6,6 +6,22 @@ CurseForge. This build only sees anglers who run the test build.
 Folder: TheFishingLogTest. Version line stays 1.1.4; the build number is the
 X-Build line in the toc and shows in the journal title and diagnostics.
 
+Build 25 - following newcomers out of a channel locked behind us
+- Closes the limit noted in build 24. Members of a channel that is locked
+  after they joined cannot tell; the people it turns away can. WHO and HERE
+  now also end with the names that refused the sender in the last half hour
+  (list names as one base-36 number, a spare by its letters).
+- When two different anglers say our channel refused them, or one heard
+  over guild or group, the addon joins the channel they are in (failing
+  that, the next list name), then leaves ours and does not ask for it again
+  for half an hour. After that it looks for itself: if the old channel lets
+  it in, it moves back.
+- Only what the game actually refused is passed on, never what someone else
+  said. At most one such move per half hour.
+- It does not move just because someone advertises a different channel.
+  Two copies that each followed the other's would swap places for ever, and
+  anyone could walk the realm from channel to channel.
+
 Build 24 - finding the others when the channel list is locked
 - The 20 fallback names are in the source, so somebody could lock all of
   them, and a longer list only costs every player more refused joins. So:
